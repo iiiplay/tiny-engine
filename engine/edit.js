@@ -36,6 +36,7 @@ const Edit = {
   sel: 0,
   cell: 16,
   origin: { x: 0, y: 0 },
+  paletteY: null,        // 色盤的 y（預設貼在畫面底部；會被遊戲 UI 擋到就自己指定）
   onChange: null,
   onSave: null,
   key: 'tiny-level',
@@ -52,6 +53,7 @@ const Edit = {
     this.sel = 0;
     this.cell = opt.cell || 16;
     this.origin = opt.origin || { x: 0, y: 0 };
+    this.paletteY = opt.paletteY != null ? opt.paletteY : null;
     this.onChange = opt.onChange || null;
     this.onSave = opt.onSave || null;
     this.key = opt.key || 'tiny-level';
@@ -118,7 +120,8 @@ const Edit = {
   /* ---------------- 色盤 ---------------- */
   paletteRect(i) {
     const w = 56, h = 14, gap = 2;
-    return { x: 4 + i * (w + gap), y: GAME_H - h - 3, w, h };
+    const y = this.paletteY != null ? this.paletteY : GAME_H - h - 3;
+    return { x: 4 + i * (w + gap), y, w, h };
   },
 
   hitPalette(e) {
