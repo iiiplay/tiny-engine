@@ -236,6 +236,15 @@ async function testFrames() {
   // manifest 直接寫路徑字串（v1.5）
   const sheets = collectSheets({ a: ['x/1.png', 'x/2.png'], b: { src: 'y/1.png' } });
   check('collectSheets 支援純路徑字串', Object.keys(sheets).sort().join(','), 'x/1.png,x/2.png,y/1.png');
+
+  // sheetOf 快取：同一張圖用不同 frames 不能互相蓋掉（v1.5.1）
+  ASSETS['t/sheet.png'] = red;
+  const a1 = sheetOf(assetDef('t/sheet.png', 1, 8, 8));
+  const a6 = sheetOf(assetDef('t/sheet.png', 6, 8, 8));
+  const a1b = sheetOf(assetDef('t/sheet.png', 1, 8, 8));
+  check('同一張圖不同切法各自快取', [a1.frames, a6.frames, a1b.frames].join(','), '1,6,1');
+  check('同切法會拿到同一個物件', a1 === a1b, true);
+  check('白色剪影共用', a1.white === a6.white, true);
 }
 
 /* ============================================================

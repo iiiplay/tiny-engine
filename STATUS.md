@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.5.0**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.5.1**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -50,6 +50,7 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | **v1.5** `Camera.setView` + `Camera.push/pop`（世界捲動 + HUD 不動） | ✅ | 同上（transform 比對） |
 | **v1.5** `Scene.syncState`（切場景同步 `G.state`） | ✅ | 同上 |
 | **v1.5** 文件 `docs/api-grid.md`（碰撞保證／距離場／3 個範例／效能） | ✅ | README 互連 |
+| **v1.5.1** `sheetOf` 快取改成 `src|frames|fw|rows|fh`（同一張圖多種切法不再互相蓋掉） | ✅ | `tools/v15.py` 48 項 |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |

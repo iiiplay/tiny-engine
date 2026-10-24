@@ -5,7 +5,8 @@
 
 /* ---------------- 資源 ---------------- */
 const ASSETS = {};   // src -> Image
-const SHEETS = {};   // src -> {img, frames, fw, h, foot, white}
+const SHEETS = {};   // "src|frames|fw|rows|fh" -> {img, frames, fw, h, foot, white}
+const WHITES = {};   // src -> 白色剪影 canvas（同一張圖只做一次）
 
 function makeWhite(img) {
   const c = document.createElement('canvas');
@@ -25,15 +26,20 @@ function assetDef(src, frames, foot, fw, opt) {
   return { src, frames: frames || 1, foot: foot, fw: fw, rows: opt.rows || 1, fh: opt.fh };
 }
 
+/* v1.5.1：快取 key 加上 frames / fw / rows / fh
+   以前只用 src → 同一張圖用兩種切法（例如 manifest 用 1 格、遊戲用 6 格）
+   後面那個會被前面蓋掉，動畫就變成一整張圖。 */
 function sheetOf(def) {
   if (!def || !def.src) return null;
-  let s = SHEETS[def.src];
+  const rows = def.rows || 1;
+  const key = def.src + '|' + (def.frames || 1) + '|' + (def.fw || 0) + '|' + rows + '|' + (def.fh || 0);
+  let s = SHEETS[key];
   if (!s) {
     const img = ASSETS[def.src];
     if (!img) return null;
-    const rows = def.rows || 1;
     const fh = def.fh || (rows > 1 ? Math.floor(img.height / rows) : img.height);
-    s = SHEETS[def.src] = {
+    if (!WHITES[def.src]) WHITES[def.src] = makeWhite(img);
+    s = SHEETS[key] = {
       src: def.src,
       img,
       frames: def.frames || 1,
@@ -42,7 +48,7 @@ function sheetOf(def) {
       rows,
       fh,
       foot: def.foot != null ? def.foot : fh,
-      white: makeWhite(img),
+      white: WHITES[def.src],
     };
   }
   return s;

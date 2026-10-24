@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.1 — 2026-10-24
+
+> tiny-keep（塔防）實作時抓到的快取 bug。
+
+### 修正
+- **`sheetOf()` 快取 key 只有 `src`** → 同一張圖用兩種切法會互相蓋掉：
+  `loadAll()` 會先替 manifest 的每張圖建一次 `{frames:1}` 的 sheet，
+  之後 `sheetOf(assetDef(src, 6, 17, 16))` 拿到的卻是「1 格、fw = 整張寬」的舊快取
+  → 動畫變成糊成一整條（怪物換成別張圖的樣子）。
+  現在 key 是 `src|frames|fw|rows|fh`，不同切法各自快取、相同切法共用同一個物件。
+- 白色剪影 `makeWhite()` 改成每張圖只做一次（`WHITES` 快取），不再每個切法都重畫一張 canvas。
+
+### 驗收
+- `tools/v15.py` 48 項全過（新增 3 項：不同切法各自快取／同切法同物件／剪影共用）
+- `v13` / `v14` / `shot` / `pack.py --check` 全部 PASS
+
 ## v1.5.0 — 2026-10-24
 
 > 主題：**格子遊戲需要的东西進引擎**。來自 tiny-bomber（炸彈人）實戰：

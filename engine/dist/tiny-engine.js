@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.5.0';
+const TINY_ENGINE_VERSION = '1.5.1';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -410,7 +410,8 @@ const Loop = {
 
 /* ---------------- 資源 ---------------- */
 const ASSETS = {};   // src -> Image
-const SHEETS = {};   // src -> {img, frames, fw, h, foot, white}
+const SHEETS = {};   // "src|frames|fw|rows|fh" -> {img, frames, fw, h, foot, white}
+const WHITES = {};   // src -> 白色剪影 canvas（同一張圖只做一次）
 
 function makeWhite(img) {
   const c = document.createElement('canvas');
@@ -430,15 +431,20 @@ function assetDef(src, frames, foot, fw, opt) {
   return { src, frames: frames || 1, foot: foot, fw: fw, rows: opt.rows || 1, fh: opt.fh };
 }
 
+/* v1.5.1：快取 key 加上 frames / fw / rows / fh
+   以前只用 src → 同一張圖用兩種切法（例如 manifest 用 1 格、遊戲用 6 格）
+   後面那個會被前面蓋掉，動畫就變成一整張圖。 */
 function sheetOf(def) {
   if (!def || !def.src) return null;
-  let s = SHEETS[def.src];
+  const rows = def.rows || 1;
+  const key = def.src + '|' + (def.frames || 1) + '|' + (def.fw || 0) + '|' + rows + '|' + (def.fh || 0);
+  let s = SHEETS[key];
   if (!s) {
     const img = ASSETS[def.src];
     if (!img) return null;
-    const rows = def.rows || 1;
     const fh = def.fh || (rows > 1 ? Math.floor(img.height / rows) : img.height);
-    s = SHEETS[def.src] = {
+    if (!WHITES[def.src]) WHITES[def.src] = makeWhite(img);
+    s = SHEETS[key] = {
       src: def.src,
       img,
       frames: def.frames || 1,
@@ -447,7 +453,7 @@ function sheetOf(def) {
       rows,
       fh,
       foot: def.foot != null ? def.foot : fh,
-      white: makeWhite(img),
+      white: WHITES[def.src],
     };
   }
   return s;
@@ -1381,7 +1387,9 @@ const Grid = {
      回傳 Int16Array：步數，-1 = 走不到；來源格 = 0（來源可以是牆，例如木桶） */
   field(opt) {
     opt = opt || {};
-    const W = this.cols, H = this.rows, C = this.cell;
+    const W = this.cols, H = this.rows;
+    const passTiles = opt.ignoreTiles || null;
+    const ent = passTiles ? { passTiles } : null;
     const f = opt.into || new Int16Array(W * H).fill(-1);
     if (opt.into) f.fill(-1);
     const src = opt.cells || (opt.from ? [opt.from] : []);
@@ -1412,9 +1420,9 @@ const Grid = {
         if (!this.inside(nx, ny)) continue;
         const ni = ny * W + nx;
         if (f[ni] !== -1) continue;
-        if (this.solid(nx, ny)) continue;
+        if (this.solid(nx, ny, ent)) continue;
         if (block && block(nx, ny)) continue;
-        if (dx && dy && (this.solid(x + dx, y) || this.solid(x, y + dy))) continue;  // 不切角
+        if (dx && dy && (this.solid(x + dx, y, ent) || this.solid(x, y + dy, ent))) continue;  // 不切角
         f[ni] = d;
         q.push(ni);
       }

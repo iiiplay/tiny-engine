@@ -210,12 +210,25 @@ drawSprite(img, sx, sy, sw, sh,
 
 ---
 
+## 快取（v1.5.1 起）
+
+`sheetOf(def)` 的快取 key 是 **`src|frames|fw|rows|fh`**：
+
+```js
+sheetOf(assetDef('hero.png', 1, 16, 16));   // {frames:1, fw:16}
+sheetOf(assetDef('hero.png', 6, 16, 16));   // 另一份 {frames:6}（不會蓋掉上面那個）
+```
+
+同一份切法會拿到**同一個物件**（`white` 剪影也共用），所以可以放心在
+`loadAll()`（它會替 manifest 的圖各建一份 `{frames:1}`）之後再建自己的動畫表。
+
 ## 驗收與版本
 
 | 版本 | 內容 |
 |---|---|
 | **v1.4.0** | 新增 `drawSprite()`；`drawSheet` / `drawDirSheet` / `drawCrop` 支援 `flipX` / `flipY` / `rot` / `pivot`；`demo/v14.html` + `tools/v14.py`（26 項像素級驗收） |
 | **v1.5.0** | 新增逐格動畫 `frameOf` / `drawFrames`；manifest 支援純路徑字串；`demo/v15.html` + `tools/v15.py` |
+| **v1.5.1** | `sheetOf` 快取 key 加上切法（修正同一張圖兩種 frames 互相蓋掉）；`white` 剪影共用 |
 
 ```bash
 python tools/serve.py                                   # → http://localhost:8766/demo/v14.html
