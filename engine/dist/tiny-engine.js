@@ -1835,6 +1835,8 @@ const LevelLib = {
       n: meta.name || '',
       c: W, r: H, cell: lv.cell || 16,
       m: meta.mode || '',
+      en: meta.entry || 0,      // 出生點 [cx,cy]
+      ex: meta.exit || 0,       // 出口點
       t: runs,
       o: lv.objects.length
         ? lv.objects.map(o => [o.type, o.cx, o.cy, o.data || 0])
@@ -1879,6 +1881,8 @@ const LevelLib = {
     lv.meta.name = data.n || lv.meta.name || '';
     lv.meta.mode = lv.meta.mode || '';
     if (data.m) lv.meta.mode = data.m;
+    if (data.en) lv.meta.entry = data.en;
+    if (data.ex) lv.meta.exit = data.ex;
     lv.objects = (data.o || []).map(o => ({
       type: o[0], cx: o[1] | 0, cy: o[2] | 0, data: o[3] || null,
     }));
