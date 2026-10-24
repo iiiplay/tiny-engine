@@ -38,6 +38,7 @@ const Edit = {
   origin: { x: 0, y: 0 },
   paletteY: null,        // 色盤的 y（預設貼在畫面底部；會被遊戲 UI 擋到就自己指定）
   markers: null,         // [{ key:'entry', name:'入口', color:'#e5484d' }] → 點了會寫進 level.meta[key]
+  objectTypes: null,     // [{ type:'tower', name:'起始塔', color:'#ffd45e' }] → 點格子放/收 Level.objects
   onChange: null,
   onSave: null,
   key: 'tiny-level',
@@ -56,6 +57,7 @@ const Edit = {
     this.origin = opt.origin || { x: 0, y: 0 };
     this.paletteY = opt.paletteY != null ? opt.paletteY : null;
     this.markers = opt.markers || null;      // 標記（不算格子，存 meta）
+    this.objectTypes = opt.objectTypes || null;
     this.onChange = opt.onChange || null;
     this.onSave = opt.onSave || null;
     this.key = opt.key || 'tiny-level';
@@ -132,6 +134,11 @@ const Edit = {
         items.push({ kind: 'mark', key: m.key, name: m.name, color: m.color || '#ffd45e' });
       }
     }
+    if (this.objectTypes) {
+      for (const o of this.objectTypes) {
+        items.push({ kind: 'object', type: o.type, name: o.name, color: o.color || '#ffd45e' });
+      }
+    }
     return items;
   },
 
@@ -172,9 +179,20 @@ const Edit = {
 
   paint(c) {
     if (!this.level || !this.level.inside(c.cx, c.cy)) return false;
-    if (this.lastPaint && this.lastPaint.cx === c.cx && this.lastPaint.cy === c.cy) return false;
-    this.lastPaint = c;
     const item = this.paletteItems()[this.sel] || { kind: 'tile', v: 0 };
+    // 物件要能「同一格再點一次收掉」，所以只有格子/標記才擋重複
+    if (item.kind !== 'object' && this.lastPaint &&
+        this.lastPaint.cx === c.cx && this.lastPaint.cy === c.cy) return false;
+    this.lastPaint = c;
+    if (item.kind === 'object') {
+      // 物件：點一次放、再點同一格收掉（右鍵也可以收）
+      const hit = this.level.objectAt(c.cx, c.cy, item.type);
+      if (hit) { this.level.removeObjectAt(c.cx, c.cy, item.type); this.changed(); return true; }
+      if (this.painting < 0) return false;
+      this.level.addObject(item.type, c.cx, c.cy, { from: 'edit' });
+      this.changed();
+      return true;
+    }
     if (item.kind === 'mark') {
       // 標記（入口／出口…）不算格子，寫進 level.meta
       if (this.painting < 0) return false;

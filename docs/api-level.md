@@ -145,6 +145,24 @@ Edit.init({
 色盤會自動變成「格子色 + 標記」（`Edit.paletteItems()`），標記會在畫面上畫成一個帶名字的小方塊。
 `LevelLib` 的關卡碼會一起帶 `meta.entry` / `meta.exit`，所以玩家自製的迷宮換了入口位置也能分享。
 
+### 物件（起始塔／寶箱／重生點…）
+
+`objectTypes` 會多出色盤項目，點格子就放一個 `Level.objects` 項目、**再點同一格收掉**，
+右鍵也可以收（不會改到格子值；`Ctrl+Z` 只追蹤格子）：
+
+```js
+Edit.init({
+  level: lv,
+  palette: [{ v: 0, name: '草地', color: '#b8d94a' }],
+  objectTypes: [
+    { type: 'archer', name: '起始弓手', color: '#ffd45e' },
+    { type: 'chest',  name: '寶箱',     color: '#e5484d' },
+  ],
+});
+// 遊戲端：進關卡時把 objects 變成實物
+for (const o of lv.objects) if (o.type === 'archer') spawnFreeTower(o.cx, o.cy);
+```
+
 **接進遊戲的方式**（重點：編輯模式要「吃掉」原本的操作）
 
 ```js

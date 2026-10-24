@@ -147,10 +147,10 @@ function testLevel() {
   LevelLib.rename(e1.id, '改名後');
   check('rename', LevelLib.entry(e1.id).name, '改名後');
   const imp = LevelLib.importCode(code, '匯入的');
-  check('importCode 存進庫', LevelLib.list().length, 2);
-  check('importCode 的名稱', imp.entry.name, '匯入的');
+  check('importCode 同一段碼 → 重用既有 entry（去重）', [imp.dup, LevelLib.list().length], [true, 1]);
+  check('去重時保留原本名稱', imp.entry.name, '改名後');
   LevelLib.remove(e1.id);
-  check('remove', LevelLib.list().length, 1);
+  check('remove', LevelLib.list().length, 0);
   check('TE 有 LevelLib', TE.LevelLib === LevelLib, true);
 
   return lv;
@@ -178,13 +178,21 @@ function testEditInit() {
       { key: 'entry', name: '入口', color: '#e5484d' },
       { key: 'exit', name: '出口', color: '#7fb3ff' },
     ],
+    objectTypes: [{ type: 'tower', name: '起始塔', color: '#ffd45e' }],
   });
   check('Edit.init 綁好 level', Edit.level === EDIT_LV, true);
   check('Edit 預設關閉', Edit.enabled, false);
   Edit.sel = 1;              // 預設選「牆」，塗了才看得出變化
   Edit.toggle();
   check('toggle 之後開啟', Edit.enabled, true);
-  check('色盤 = 3 種格子 + 2 個標記', Edit.paletteItems().length, 5);
+  check('色盤 = 3 種格子 + 2 標記 + 1 物件', Edit.paletteItems().length, 6);
+  // 物件：點一格放上去、再點同一格收掉
+  Edit.sel = 5;
+  Edit.paint({ cx: 4, cy: 2 });
+  check('物件：放進 Level.objects', [EDIT_LV.objects.length, EDIT_LV.objects[0].type], [1, 'tower']);
+  check('物件：不會改格子', EDIT_LV.get(4, 2), 0);
+  Edit.paint({ cx: 4, cy: 2 });
+  check('物件：再點一次收掉', EDIT_LV.objects.length, 0);
   // 標記：選「入口」→ 點一格 → 寫進 meta（不是改格子）
   Edit.sel = 3;
   Edit.paint({ cx: 2, cy: 3 });
