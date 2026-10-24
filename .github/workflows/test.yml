@@ -60,7 +60,10 @@ jobs:
       - name: 自動遊玩壓力測試
         run: python tools/soak.py 8 http://localhost:8766/demo/
 
-      - name: 效能（大地圖 + 剔除，fps 低於 45 就失敗）
+      - name: 區網連線（兩個分頁：房主 + 加入端）
+        run: python tools/nettest.py http://localhost:8766/demo/net.html
+
+      - name: 效能（大地圖 + 剔除 + A* 節流，fps 低於 45 就失敗）
         run: python tools/bench.py http://localhost:8766/demo/bench.html
 
       - name: 上傳截圖

@@ -129,6 +129,38 @@ if (path[0]) { /* 往 path[0] 走，到了就 shift() */ }
 
 ---
 
+## 區網 demo（2 人）
+
+`demo/net.html`：房主權威 + 加入端瘦客戶端的最小範例。
+
+```
+兩台裝置開同一頁 → 一台按 1（開房間 TEDEMO）、另一台按 2（加入）
+加入端用方向鍵移動方塊 → 房主端算 → 加入端看到同步結果
+```
+
+```bash
+python tools/nettest.py http://localhost:8766/demo/net.html   # 兩個分頁端到端測試（CI 也會跑）
+```
+
+實測：`房主 sent 36 / 加入端 snap 37、延遲 33ms / 加入端按 → 讓房主端方塊 180→252`
+
+## A\* 節流（大量單位）
+
+400 隻同時重算會讓某一帧爆量。用排程把重算分散：
+
+```js
+// 每帧 update：
+Pathfind.update(dt);                                    // 每帧最多算 maxPerStep 條
+
+// 找路（同一個單位只保留最新一筆、有最短間隔）：
+Pathfind.request(chaser, player.x, player.y, (path) => { chaser.path = path; });
+
+Pathfind.maxPerStep = 2;      // 每帧上限
+Pathfind.minInterval = 0.35;  // 同一單位最短重算間隔（秒）
+```
+
+bench 已改用這個模式：**3200×2000 / 400 隻仍 60fps**（最大帧 ~23ms 只出現在第一帧的 A\* 建圖）。
+
 ## 效能台（會顯示 FPS）
 
 ```
@@ -217,6 +249,11 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 - 執行：任何支援 ES2017 + Canvas 2D 的瀏覽器（Chrome / Safari / Edge / Firefox）
 - 工具：`python tools/serve.py` 只需要 Python 3（區網中繼用標準庫實作）
 - 選用：`pip install segno`（產生 QR）、`pip install playwright`（跑測試）
+
+## 狀態文件
+
+- [`STATUS.md`](STATUS.md) — 目前版本、已完成/待辦、效能數據、常用指令（**接手先看這個**）
+- [`CHANGELOG.md`](CHANGELOG.md) — 每個版本做了什麼
 
 ## 第一款正式遊戲
 

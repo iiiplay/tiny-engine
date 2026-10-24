@@ -144,6 +144,53 @@ const Pathfind = {
     return this.smooth(out);
   },
 
+  /* ============================================================
+     大量單位用的「節流排程」
+     400 隻同時重算會讓某一帧爆量；把重算分散到多個帧就不會頓。
+       在每帧 update 呼叫： Pathfind.update(dt)
+       找路：               Pathfind.request(agent, targetX, targetY, (path) => { agent.path = path; })
+     ・同一個 agent 只保留最新的一筆
+     ・同一個 agent 有最短重算間隔（minInterval 秒）
+     ・每帧最多算 maxPerStep 條
+     ============================================================ */
+  queue: [],
+  maxPerStep: 2,
+  minInterval: 0.35,
+
+  pending() { return this.queue.length; },
+
+  request(agent, tx, ty, onPath, opt) {
+    opt = opt || {};
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (agent.__pfLast && now - agent.__pfLast < (opt.interval != null ? opt.interval : this.minInterval) * 1000) {
+      return false;                       // 太頻繁，跳過這一帧
+    }
+    agent.__pfLast = now;
+    for (let i = 0; i < this.queue.length; i++) {
+      if (this.queue[i].agent === agent) {       // 已在排隊 → 只更新目標
+        this.queue[i].tx = tx; this.queue[i].ty = ty; this.queue[i].onPath = onPath;
+        return true;
+      }
+    }
+    this.queue.push({ agent, tx, ty, onPath });
+    return true;
+  },
+
+  update(dt) {
+    if (!this.queue.length) return 0;
+    let done = 0;
+    while (done < this.maxPerStep && this.queue.length) {
+      const job = this.queue.shift();
+      const path = this.lineClear(job.agent.x, job.agent.y, job.tx, job.ty)
+        ? [{ x: job.tx, y: job.ty }]
+        : this.find(job.agent.x, job.agent.y, job.tx, job.ty);
+      if (job.onPath) job.onPath(path);
+      else job.agent.path = path;
+      done++;
+    }
+    return done;
+  },
+
   /* 去掉共線點 + 用 lineClear 走捷徑 */
   smooth(path) {
     if (path.length <= 2) return path;

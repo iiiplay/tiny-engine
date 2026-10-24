@@ -26,8 +26,8 @@ with sync_playwright() as p:
         pg.goto(BASE + qs, wait_until='load')
         pg.wait_for_function("window.__bench", timeout=30000)
         r = pg.evaluate("window.__bench")
-        line = '%-24s fps %3d | render %5.2f ms | 同屏 %3d/%d | %s' % (
-            name, r['fps'], r['renderMs'], r['visChasers'], r['n'], r['world'])
+        line = '%-24s fps %3d | render %5.2f ms | max frame %6.2f ms | onscreen %3d/%d | %s' % (
+            name, r['fps'], r['renderMs'], r.get('maxFrameMs', 0), r['visChasers'], r['n'], r['world'])
         flag = 'OK ' if r['fps'] >= MIN_FPS else 'LOW'
         if r['fps'] < MIN_FPS:
             ok = False

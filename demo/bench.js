@@ -27,6 +27,8 @@ const B = {
   fpsHist: [],
   visCount: 0,
   lastRender: 0,
+  frameGaps: [],
+  lastFrameAt: 0,
 };
 
 function build() {
@@ -64,6 +66,7 @@ function build() {
 
 function update(dt) {
   B.player.t += dt;
+  Pathfind.update(dt);            // ★ 節流：每帧最多算 maxPerStep 條
   /* 玩家繞圓走，強迫鏡頭一直捲動 */
   const a = B.player.t * 0.35;
   B.player.x = WORLD.w / 2 + Math.cos(a) * (WORLD.w * 0.3);
@@ -73,9 +76,7 @@ function update(dt) {
     c.repathT -= dt;
     if (c.repathT <= 0) {
       c.repathT = 0.6 + Math.random() * 0.4;
-      c.path = Pathfind.lineClear(c.x, c.y, B.player.x, B.player.y)
-        ? [{ x: B.player.x, y: B.player.y }]
-        : Pathfind.find(c.x, c.y, B.player.x, B.player.y);
+      Pathfind.request(c, B.player.x, B.player.y, (p) => { c.path = p; });   // ★ 排隊，不再同帧硬算
     }
     const wp = c.path[0];
     if (!wp) continue;
@@ -133,7 +134,8 @@ function render() {
   hudPanel(6, 6, 240, 46);
   text('BENCH  n=' + N + '   剔除 ' + (CULL ? 'ON' : 'OFF'), 12, 9, { size: 8, shadow: false });
   text('同屏實體 ' + B.visCount + ' / ' + N + '   世界 ' + WORLD.w + 'x' + WORLD.h, 12, 21, { size: 6.5, shadow: false, color: '#cfd8c0' });
-  text('render ' + B.lastRender.toFixed(2) + ' ms   update ' + Loop.ms + ' ms', 12, 33, { size: 6.5, shadow: false, color: '#8fe36a' });
+  text('render ' + B.lastRender.toFixed(2) + ' ms   update ' + Loop.ms + ' ms   A* 佇列 ' + Pathfind.pending(),
+    12, 33, { size: 6.5, shadow: false, color: '#8fe36a' });
 
   /* 右上：大字 FPS + 折線圖 */
   const px = GAME_W - 118, py = 6;
@@ -168,6 +170,7 @@ function render() {
     text('完成', GAME_W / 2, GAME_H / 2 - 26, { align: 'center', size: 10, color: '#ffe9a8' });
     text('fps ' + r.fps + '   render ' + r.renderMs + ' ms', GAME_W / 2, GAME_H / 2 - 8, { align: 'center', size: 8, shadow: false });
     text('同屏 ' + r.visChasers + ' / ' + r.n + '   世界 ' + r.world, GAME_W / 2, GAME_H / 2 + 8, { align: 'center', size: 7, shadow: false, color: '#cfd8c0' });
+    text('最大帧 ' + (r.maxFrameMs || 0) + ' ms   p99 ' + (r.p99FrameMs || 0) + ' ms', GAME_W / 2, GAME_H / 2 + 22, { align: 'center', size: 7, shadow: false, color: '#8fe36a' });
   }
 }
 
@@ -189,6 +192,8 @@ window.addEventListener('load', async () => {
   const origRender = render;
   Loop.render = () => {
     const a = performance.now();
+    if (B.lastFrameAt) B.frameGaps.push(a - B.lastFrameAt);
+    B.lastFrameAt = a;
     origRender();
     B.lastRender = performance.now() - a;
     renderMs.push(B.lastRender);
@@ -202,7 +207,10 @@ window.addEventListener('load', async () => {
     if (performance.now() - t0 > 3000) {
       clearInterval(iv);
       const sorted = renderMs.slice().sort((a, b) => a - b);
+      const gaps = B.frameGaps.slice().sort((a, b) => a - b);
       window.__bench = {
+        maxFrameMs: Math.round((gaps[gaps.length - 1] || 0) * 100) / 100,
+        p99FrameMs: Math.round((gaps[Math.floor(gaps.length * 0.99)] || 0) * 100) / 100,
         n: N,
         cull: CULL,
         world: WORLD.w + 'x' + WORLD.h,

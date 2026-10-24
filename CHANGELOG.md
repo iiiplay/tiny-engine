@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.2.0 — 2026-10-24
+
+### A\* 節流（大量單位）
+- `Pathfind.request(agent, tx, ty, onPath)`：把找路工作排進佇列
+  · 同一個 agent 只保留最新一筆 · 有最短重算間隔（`minInterval`）
+- `Pathfind.update(dt)`：每帧最多處理 `maxPerStep` 條
+- `Pathfind.pending()`：佇列長度（除錯用）
+- bench 改用節流：3200×2000 / 400 隻仍 60fps
+
+### 區網 demo
+- `demo/net.html` + `demo/net.js`：房主權威 + 加入端瘦客戶端（按 1 開房、2 加入）
+  · 加入端送輸入、房主算、加入端看快照；畫面上顯示角色、快照數、延遲
+- `tools/nettest.py`：兩個分頁的端到端測試（加入端按 → 房主端方塊要動）
+
+### 效能台
+- 多量測「最大帧時間」與 p99（`maxFrameMs` / `p99FrameMs`），畫面上也顯示
+- 顯示 A\* 佇列長度
+
+### CI
+- 加上 `tools/nettest.py` 一關
+
 ## v1.1.0 — 2026-10-24
 
 ### 音檔（實測）

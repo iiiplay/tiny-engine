@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TinyEngine — 區網 demo</title>
+<style>
+  html, body { margin:0; height:100%; background:#0d0f1a; overflow:hidden; position:fixed; inset:0;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+    font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif; }
+  #game { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:block; image-rendering:pixelated; background:#1b2238; }
+  #ui { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; background:transparent; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#ffe9a8; font-size:14px; background:#0d0f1a; z-index:10; }
+</style>
+</head>
+<body>
+  <canvas id="game" width="1000" height="720"></canvas>
+  <canvas id="ui"></canvas>
+  <div id="loading">載入中…</div>
+  <script src="../engine/util.js"></script>
+  <script src="../engine/core.js"></script>
+  <script src="../engine/assets.js"></script>
+  <script src="../engine/sprite.js"></script>
+  <script src="../engine/input.js"></script>
+  <script src="../engine/audio.js"></script>
+  <script src="../engine/fx.js"></script>
+  <script src="../engine/physics.js"></script>
+  <script src="../engine/pathfind.js"></script>
+  <script src="../engine/save.js"></script>
+  <script src="../engine/ui.js"></script>
+  <script src="../engine/touch.js"></script>
+  <script src="../engine/net.js"></script>
+  <script src="net.js"></script>
+</body>
+</html>
