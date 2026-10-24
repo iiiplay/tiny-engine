@@ -86,7 +86,59 @@ function loadAll(a, b) {
   });
 }
 /* ---------------- 繪製 ---------------- */
-/* (x,y) = 角色「腳底中心」；所有動畫都用同一錨點 → 不會抖動 */
+
+/* ------------------------------------------------------------------
+   drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt)
+   ------------------------------------------------------------
+   底層繪製：把圖片的一塊（sx,sy,sw,sh）畫到螢幕矩形（dx,dy,dw,dh），
+   可選左右鏡像 / 上下顛倒 / 旋轉。其他繪製函式都靠這支，
+   所以「鏡像與旋轉的行為」全引擎只有一份實作。
+
+   opt = {
+     flipX, flipY            左右鏡像 / 上下顛倒（true/false）
+     rot                     旋轉弧度（順時針；Math.PI/2 = 轉 90°）
+     pivot                   旋轉軸心：{x, y} 絕對座標（在目前的 transform 底下），
+                             或 'center'（預設 = 目標矩形中心）
+     alpha                   0~1（可選；沒給就不碰 globalAlpha）
+     target                  要畫到哪個 ctx（預設 G.ctx）
+   }
+
+   效能：不需要變形時直接 drawImage（零額外成本）；需要時才 save/rotate/restore。
+   像素遊戲注意：rot 不是 90° 的倍數時，像素會被插值糊掉
+   （引擎已設 imageSmoothingEnabled=false，但非直角仍然會走樣）。
+   ------------------------------------------------------------------ */
+function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt) {
+  if (!img) return;
+  const o = opt || {};
+  const ctx = o.target || G.ctx;
+  const w = dw == null ? sw : dw;
+  const h = dh == null ? sh : dh;
+  const fx = !!o.flipX, fy = !!o.flipY, rot = o.rot || 0;
+  const a = o.alpha;
+  if (a != null) ctx.globalAlpha = a;
+
+  // 最常見的情況：什麼都不變 → 直接畫
+  if (!fx && !fy && !rot) {
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, w, h);
+    if (a != null) ctx.globalAlpha = 1;
+    return;
+  }
+
+  const pv = (!o.pivot || o.pivot === 'center')
+    ? { x: dx + w / 2, y: dy + h / 2 }
+    : o.pivot;
+  ctx.save();
+  ctx.translate(pv.x, pv.y);
+  if (rot) ctx.rotate(rot);
+  if (fx || fy) ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
+  ctx.drawImage(img, sx, sy, sw, sh, dx - pv.x, dy - pv.y, w, h);
+  ctx.restore();
+  if (a != null) ctx.globalAlpha = 1;
+}
+
+/* (x,y) = 角色「腳底中心」；所有動畫都用同一錨點 → 不會抖動
+   opt 額外支援 flipX / flipY / rot / pivot
+   （預設繞「圖框中心」轉，圖框不會跑掉；要繞腳底轉請給 pivot:{x,y}） */
 function drawSheet(s, frame, x, y, o, target) {
   if (!s) return;
   const ctx = target || G.ctx;
@@ -94,22 +146,25 @@ function drawSheet(s, frame, x, y, o, target) {
   const sc = o.scale || 1;
   const fw = s.fw, fh = s.h;
   const img = o.white ? s.white : s.img;
-  const px = Math.round(x - (fw * sc) / 2 + (o.ox || 0));
-  const py = Math.round(y - s.foot * sc + (o.oy || 0));
-  const a = o.alpha != null ? o.alpha : 1;
-  if (a !== 1) ctx.globalAlpha = a;
-  ctx.drawImage(img, (frame | 0) * fw, 0, fw, fh, px, py, Math.ceil(fw * sc), Math.ceil(fh * sc));
-  if (a !== 1) ctx.globalAlpha = 1;
+  const ox = o.ox || 0, oy = o.oy || 0;
+  const px = Math.round(x - (fw * sc) / 2 + ox);
+  const py = Math.round(y - s.foot * sc + oy);
+  drawSprite(img, (frame | 0) * fw, 0, fw, fh,
+    px, py, Math.ceil(fw * sc), Math.ceil(fh * sc), {
+      flipX: o.flipX, flipY: o.flipY, rot: o.rot,
+      pivot: o.pivot,
+      alpha: o.alpha, target: ctx,
+    });
 }
 
-/* 從 tileset 裁一塊 prefab 貼圖 */
-function drawCrop(def, sx, sy, sw, sh, dx, dy, alpha, target) {
+/* 從 tileset 裁一塊 prefab 貼圖（o 同 drawSprite，預設繞中心轉） */
+function drawCrop(def, sx, sy, sw, sh, dx, dy, alpha, target, o) {
   const t = sheetOf(def);
   if (!t) return;
-  const ctx = target || G.ctx;
-  if (alpha != null) ctx.globalAlpha = alpha;
-  ctx.drawImage(t.img, sx, sy, sw, sh, Math.round(dx), Math.round(dy), sw, sh);
-  if (alpha != null) ctx.globalAlpha = 1;
+  const opts = Object.assign({}, o);
+  if (alpha != null) opts.alpha = alpha;
+  if (target || opts.target) opts.target = target || opts.target;
+  drawSprite(t.img, sx, sy, sw, sh, Math.round(dx), Math.round(dy), sw, sh, opts);
 }
 
 /* 影子（讓物件有落地感） */

@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.4.0 — 2026-10-24
+
+> 主題：**圖形變形（翻轉／旋轉）進引擎**。來自 tiny-home「家具不能左右或顛倒擺」的需求 ——
+> 以前只能在遊戲層自己寫 `ctx.save/rotate`，現在全引擎共用一份實作。
+
+### 新增 `drawSprite()`（`engine/assets.js`）
+- `drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt)`
+- `opt.flipX` / `opt.flipY`：左右鏡像 / 上下顛倒
+- `opt.rot`：任意弧度（順時針；`Math.PI/2` = 90°）
+- `opt.pivot`：軸心 `{x,y}`（絕對座標）或 `'center'`（預設＝目標矩形中心）
+- `opt.alpha` / `opt.target`（離屏或第二畫布）
+- **不變形時走原本的 `drawImage` 直路**，零額外 state 切換；有變形才 `save/rotate/restore`
+
+### 既有的三個繪製函式一起吃變形
+- `drawSheet(s, frame, x, y, opt, ctx)`：多了 `flipX` / `flipY` / `rot` / `pivot`
+  · 預設軸心是「圖框中心」（繞腳底轉 180° 會讓角色沉到地板下，所以不這樣做）
+- `drawDirSheet(s, dir, frame, x, y, opt)`：同上（可拿「左走」那列鏡像成「右走」）
+- `drawCrop(def, ..., opt)`：同上（預設繞矩形中心）
+- `Sprite.draw(x, y, opt)` 自動透傳
+
+### 文件（這次的重點）
+- **新檔 [`docs/api-sprite.md`](docs/api-sprite.md)**：完整參數表、軸心語意圖解、
+  「90° 旋轉後佔用格子互換」的可複製範例、像素遊戲注意事項（只有 90° 倍數不會糊、
+  整數座標、影子另外畫、深度排序用實際佔用底邊、8 種朝向＝rot×flipX）、效能、行為細節
+- `README.md`「四個最常用的細節」加第 4 個範例；`engine/README.md` 的模組表同步
+
+### 驗收
+- `demo/v14.html` + `tools/v14.py`：**26 項像素級檢查全過**
+  · 不變形時逐位元等於舊行為、flipX/flipY 對應像素、rot90 不糊不溢位、
+    `flipX+flipY == rot180`、`pivot` 真的生效、`drawSheet` 錨點與圖框不位移、
+    `drawDirSheet` 與 `drawSprite` 等價、alpha 生效且復原、空圖不丟錯
+- `tools/pack.py` 重新打包（14 支 → 76.3 KB）、`--check` OK
+- 第一個採用者：**tiny-home**（家具 ⇄ / ⇅ / ⟳，地毯類支援四向旋轉）
+
 ## v1.3.1 — 2026-10-24
 
 > 修 desktop-hero 實際接入時抓到的問題（v1.3.0 發版後 1 小時內）

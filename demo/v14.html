@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyEngine v1.4 — drawSprite 翻轉 / 旋轉驗收</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0f18; overflow: hidden;
+    font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; user-select: none; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; image-rendering: pixelated; border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6); background: #121a26; }
+  #hint { position: fixed; left: 14px; bottom: 12px; color: #64718a; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="hint">v1.4 驗收頁：drawSprite / drawSheet / drawDirSheet 的 flipX · flipY · rot · pivot</div>
+
+<script src="../engine/util.js?v=1.4"></script>
+<script src="../engine/core.js?v=1.4"></script>
+<script src="../engine/assets.js?v=1.4"></script>
+<script src="../engine/sprite.js?v=1.4"></script>
+<script src="../engine/input.js?v=1.4"></script>
+<script src="../engine/fx.js?v=1.4"></script>
+<script src="../engine/ui.js?v=1.4"></script>
+<script>
+/* ============================================================
+   v1.4 驗收：圖形翻轉／旋轉
+   ------------------------------------------------------------
+   1) 先跑「像素級」單元測試（離屏 canvas，畫完讀像素比對）
+      結果放到 window.V14，tools/v14.py 會來讀
+   2) 再把測試圖放大畫到畫面上，人眼也能確認
+   ============================================================ */
+GAME_W = 400;
+
+const RED = '#ff0000', GREEN = '#00ff00', BLUE = '#0000ff', YEL = '#ffff00';
+
+/* 2×2 四色測試圖（左上紅、右上綠、左下藍、右下黃） */
+function makeQuad() {
+  const c = document.createElement('canvas');
+  c.width = 2; c.height = 2;
+  const x = c.getContext('2d');
+  x.fillStyle = RED;   x.fillRect(0, 0, 1, 1);
+  x.fillStyle = GREEN; x.fillRect(1, 0, 1, 1);
+  x.fillStyle = BLUE;  x.fillRect(0, 1, 1, 1);
+  x.fillStyle = YEL;   x.fillRect(1, 1, 1, 1);
+  return c;
+}
+
+function loadImg(canvas) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = canvas.toDataURL();
+  });
+}
+
+/* 離屏畫布：8×8，方便抓像素 */
+function offCtx() {
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 8;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  return x;
+}
+
+const CASES = [];
+function check(name, ok, detail) {
+  CASES.push({ name, ok: !!ok, detail: detail || '' });
+}
+
+/* 顏色 → 位置（只找四種測試色，其他視為空） */
+function pixelsOf(ctx, w, h) {
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const out = {};
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const a = d[i + 3];
+      if (a < 200) continue;
+      const key = d[i] + ',' + d[i + 1] + ',' + d[i + 2];
+      (out[key] = out[key] || []).push(x + ',' + y);
+    }
+  }
+  return out;
+}
+
+const KEY = {
+  red: '255,0,0', green: '0,255,0', blue: '0,0,255', yel: '255,255,0',
+};
+
+function where(px, k) {
+  const v = px[KEY[k]];
+  return v && v.length === 1 ? v[0] : (v ? v.join('|') : '(沒有)');
+}
+
+function sameSpot(px, k, spot) {
+  return where(px, k) === spot;
+}
+
+async function runTests() {
+  const img = await loadImg(makeQuad());
+  const DEF = { img };
+
+  /* A) 完全沒變形 → 要跟直接 drawImage 一模一样（回歸測試）
+        矩形 (1,1) 2×2 */
+  const a1 = offCtx(); a1.drawImage(img, 0, 0, 2, 2, 1, 1, 2, 2);
+  const a2 = offCtx(); drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: a2 });
+  const A = a1.getImageData(0, 0, 8, 8).data, B = a2.getImageData(0, 0, 8, 8).data;
+  let diff = 0;
+  for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) diff++;
+  check('A 不變形 = 原本的 drawImage（逐像素相同）', diff === 0, diff + ' bytes 不同');
+
+  /* B) flipX：軸心 = 矩形中心 (2,2) */
+  const bx = offCtx(); drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: bx, flipX: true });
+  const Bp = pixelsOf(bx, 8, 8);
+  check('B flipX 紅→(2,1)', sameSpot(Bp, 'red', '2,1'), where(Bp, 'red'));
+  check('B flipX 綠→(1,1)', sameSpot(Bp, 'green', '1,1'), where(Bp, 'green'));
+  check('B flipX 藍→(2,2)', sameSpot(Bp, 'blue', '2,2'), where(Bp, 'blue'));
+  check('B flipX 黃→(1,2)', sameSpot(Bp, 'yel', '1,2'), where(Bp, 'yel'));
+  check('B flipX 圖框不位移（還是佔 (1,1)-(2,2)）',
+    Object.keys(Bp).reduce((n, k) => n + Bp[k].length, 0) === 4,
+    Object.keys(Bp).reduce((n, k) => n + Bp[k].length, 0) + ' px');
+
+  /* C) flipY */
+  const cy = offCtx(); drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: cy, flipY: true });
+  const Cp = pixelsOf(cy, 8, 8);
+  check('C flipY 紅→(1,2)', sameSpot(Cp, 'red', '1,2'), where(Cp, 'red'));
+  check('C flipY 綠→(2,2)', sameSpot(Cp, 'green', '2,2'), where(Cp, 'green'));
+  check('C flipY 藍→(1,1)', sameSpot(Cp, 'blue', '1,1'), where(Cp, 'blue'));
+  check('C flipY 黃→(2,1)', sameSpot(Cp, 'yel', '2,1'), where(Cp, 'yel'));
+
+  /* D) rot 90°（順時針）：紅→右上、綠→右下、藍→左上、黃→左下 */
+  const dr = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: dr, rot: Math.PI / 2 });
+  const Dp = pixelsOf(dr, 8, 8);
+  check('D rot90 紅→(2,1)', sameSpot(Dp, 'red', '2,1'), where(Dp, 'red'));
+  check('D rot90 綠→(2,2)', sameSpot(Dp, 'green', '2,2'), where(Dp, 'green'));
+  check('D rot90 藍→(1,1)', sameSpot(Dp, 'blue', '1,1'), where(Dp, 'blue'));
+  check('D rot90 黃→(1,2)', sameSpot(Dp, 'yel', '1,2'), where(Dp, 'yel'));
+  check('D rot90 沒有畫到 2×2 以外（不糊、不溢位）', Object.keys(Dp).length === 4,
+    Object.keys(Dp).length + ' 種顏色');
+
+  /* E) flipX + flipY == rot 180° */
+  const e1 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: e1, flipX: true, flipY: true });
+  const e2 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: e2, rot: Math.PI });
+  const E1 = e1.getImageData(0, 0, 8, 8).data, E2 = e2.getImageData(0, 0, 8, 8).data;
+  let d2 = 0;
+  for (let i = 0; i < E1.length; i++) if (E1[i] !== E2[i]) d2++;
+  check('E flipX+flipY == rot180', d2 === 0, d2 + ' bytes 不同');
+
+  /* F) pivot 指定：繞左上角 (1,1) 轉 90° → 整塊會跑到左上角的外面（只要不是中心就證明有吃到） */
+  const f1 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: f1, rot: Math.PI / 2, pivot: { x: 1, y: 1 } });
+  const f2 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: f2, rot: Math.PI / 2 });
+  const F1 = f1.getImageData(0, 0, 8, 8).data, F2 = f2.getImageData(0, 0, 8, 8).data;
+  let d3 = 0;
+  for (let i = 0; i < F1.length; i++) if (F1[i] !== F2[i]) d3++;
+  check('F pivot:{x,y} 真的改變結果（和有中心轉不同）', d3 > 0, d3 + ' bytes 不同');
+  check('F pivot:"center" == 預設', (() => {
+    const g1 = offCtx();
+    drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: g1, rot: Math.PI / 2, pivot: 'center' });
+    const G1 = g1.getImageData(0, 0, 8, 8).data;
+    for (let i = 0; i < G1.length; i++) if (G1[i] !== F2[i]) return false;
+    return true;
+  })());
+
+  /* G) drawSheet：錨點（腳底中心）不能跑掉；flipX 要生效
+        sheet: 2×2、foot=2 → 畫在 x=10,y=10 時矩形是 (9,8,2,2) */
+  const sheet = { img, fw: 2, h: 2, frames: 1, foot: 2, white: img };
+  const g1 = offCtx();
+  drawSheet(sheet, 0, 4, 4, { flipX: true }, g1);   // 矩形 (3,2,2,2)
+  const Gp = pixelsOf(g1, 8, 8);
+  check('G drawSheet flipX 紅→(4,2)', sameSpot(Gp, 'red', '4,2'), where(Gp, 'red'));
+  check('G drawSheet flipX 綠→(3,2)', sameSpot(Gp, 'green', '3,2'), where(Gp, 'green'));
+  const g2 = offCtx();
+  drawSheet(sheet, 0, 4, 4, {}, g2);
+  const G2p = pixelsOf(g2, 8, 8);
+  check('G drawSheet 未翻轉時紅→(3,2)（錨點沒變）', sameSpot(G2p, 'red', '3,2'), where(G2p, 'red'));
+
+  /* H) drawDirSheet：rot 90° 的結果要和 drawSprite 完全等價（同一塊像素、同一個錨點） */
+  const dirSheet = { img, fw: 2, h: 2, frames: 1, rows: 1, foot: 2, white: img };
+  const h1 = offCtx();
+  drawDirSheet(dirSheet, 0, 0, 4, 4, { rot: Math.PI / 2, target: h1 });
+  const h2 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 3, 2, 2, 2, { target: h2, rot: Math.PI / 2 });
+  // 預設 pivot = 圖框中心 (4,3) → 兩者要完全一致
+  const H1 = h1.getImageData(0, 0, 8, 8).data, H2 = h2.getImageData(0, 0, 8, 8).data;
+  let d4 = 0;
+  for (let i = 0; i < H1.length; i++) if (H1[i] !== H2[i]) d4++;
+  check('H drawDirSheet rot90 == drawSprite（同錨點）', d4 === 0, d4 + ' bytes 不同');
+
+  /* I) alpha 生效且畫完會復原（不要污染後面的繪製） */
+  const i1 = offCtx();
+  drawSprite(img, 0, 0, 2, 2, 1, 1, 2, 2, { target: i1, alpha: 0.5 });
+  const Ia = i1.getImageData(1, 1, 1, 1).data;
+  check('I alpha 0.5 有生效', Ia[3] > 100 && Ia[3] < 160, 'alpha=' + Ia[3]);
+  check('I 畫完 globalAlpha 復原成 1', i1.globalAlpha === 1, 'globalAlpha=' + i1.globalAlpha);
+
+  /* J) 旋轉後圖框（腳底線）不會跑掉：轉 180° 前後 bounding box 一樣 */
+  const j1 = offCtx();
+  drawSheet(sheet, 0, 4, 4, {}, j1);
+  const j2 = offCtx();
+  drawSheet(sheet, 0, 4, 4, { rot: Math.PI }, j2);
+  const box = (ctx) => {
+    const d = ctx.getImageData(0, 0, 8, 8).data, o = { x0: 9, y0: 9, x1: -1, y1: -1 };
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      if (d[(y * 8 + x) * 4 + 3] < 200) continue;
+      o.x0 = Math.min(o.x0, x); o.y0 = Math.min(o.y0, y);
+      o.x1 = Math.max(o.x1, x); o.y1 = Math.max(o.y1, y);
+    }
+    return o.x0 + ',' + o.y0 + '~' + o.x1 + ',' + o.y1;
+  };
+  check('J drawSheet rot180 圖框不位移（腳底線固定）', box(j1) === box(j2), box(j1) + ' vs ' + box(j2));
+
+  /* K) 沒有圖 / 壞參數不要爆 */
+  let threw = false;
+  try {
+    drawSprite(null, 0, 0, 2, 2, 0, 0, 2, 2, {});
+    drawSheet(null, 0, 0, 0);
+    drawDirSheet(null, 0, 0, 0, 0);
+    drawCrop({ src: 'no-such.png' }, 0, 0, 1, 1, 0, 0);
+  } catch (e) { threw = true; }
+  check('K 空圖 / 不存在的圖不會丟錯', !threw);
+
+  window.V14 = {
+    version: TINY_ENGINE_VERSION,
+    pass: CASES.filter(c => c.ok).length,
+    fail: CASES.filter(c => !c.ok).length,
+    cases: CASES,
+  };
+}
+
+/* ---------------- 畫面上的視覺對照 ---------------- */
+function drawShowcase(img) {
+  const ctx = G.ctx;
+  ctx.setTransform(G.scale, 0, 0, G.scale, 0, 0);
+  ctx.fillStyle = '#121a26';
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+  text('drawSprite — flipX / flipY / rot / pivot', 14, 10, { size: 9, color: '#9fd0ff' });
+  text('四色測試圖：左上紅、右上綠、左下藍、右下黃', 14, 24, { size: 6, color: '#64718a' });
+
+  const cases = [
+    { label: '原本', o: {} },
+    { label: 'flipX ⇄', o: { flipX: true } },
+    { label: 'flipY ⇅', o: { flipY: true } },
+    { label: 'rot 90°', o: { rot: Math.PI / 2 } },
+    { label: 'rot 180°', o: { rot: Math.PI } },
+    { label: 'rot90 + flipX', o: { rot: Math.PI / 2, flipX: true } },
+  ];
+  const S = 6, cell = 2 * S;
+  for (let i = 0; i < cases.length; i++) {
+    const x = 20 + i * 60, y = 50;
+    // 參考格（沒變形的原始圖，框起來方便對照）
+    ctx.strokeStyle = '#243247';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 3.5, y - 3.5, cell + 7, cell + 7);
+    drawSprite(img, 0, 0, 2, 2, x, y, cell, cell, cases[i].o);
+    text(cases[i].label, x + cell / 2, y + cell + 10, { size: 6, align: 'center', color: '#8ea2c0' });
+  }
+
+  // pivot 示範：把手（小方塊）繞左下角轉
+  const px = 40, py = GAME_H - 44;
+  ctx.strokeStyle = '#3a4a63';
+  ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.stroke();
+  drawSprite(img, 0, 0, 2, 2, px, py - 12, 10, 10, { rot: Scene0.t * 1.2, pivot: { x: px, y: py } });
+  text('pivot:{x,y} → 繞自行指定的軸心轉（這裡是左下角圓點）', 60, py - 6, { size: 6, color: '#64718a' });
+}
+
+const Scene0 = { t: 0 };
+
+window.addEventListener('load', () => {
+  Display.init(document.getElementById('game'));
+  GAME_W = 400;
+  runTests().then(() => {
+    loadImg(makeQuad()).then((img) => {
+      Loop.update = (dt) => { Scene0.t += dt; };
+      Loop.render = () => drawShowcase(img);
+      Loop.start();
+    });
+  });
+});
+</script>
+</body>
+</html>

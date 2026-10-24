@@ -13,8 +13,8 @@
 |---|---|---|
 | `util.js` | 世界尺寸、小工具、方向表 | `GAME_W` / `GAME_H`、`U.clamp/rand/lerp/dist/overlap/seeded`、`DIRV` |
 | `core.js` | App 物件、畫面配置、主迴圈、鏡頭 | `G`（canvas/ctx/scale/safe/view/state/time）、`Display.init/layout/toWorld`、`Loop.start/step/fixedStep/toggleDebug`、`Camera.follow/apply/visible/toScreen` |
-| `assets.js` | 資源載入、sprite sheet 分析 | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop(def, ...)`、`shadow()` |
-| `sprite.js` | 動畫播放器 | `new Sprite(fps, loop)` → `.set(sheet, fps, loop)`、`.update(dt)`、`.draw(x, y, opt)`、`.frame`、`.done` |
+| `assets.js` | 資源載入、sprite sheet 分析 | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt)`（翻轉／旋轉底層）、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop(def, ..., opt)`、`shadow()` |
+| `sprite.js` | 動畫播放器 | `new Sprite(fps, loop)` → `.set(sheet, fps, loop)`、`.update(dt)`、`.draw(x, y, opt)`、`.frame`、`.done`、`drawDirSheet(sheet, dir, frame, x, y, opt)` |
 | `input.js` | 鍵盤 → 動作 | `Input.init(map)`（沒給就用預設 WASD/方向鍵/Enter/Escape/F3）、`isDown(a)`、`justPressed(a)`、`moveAxis()`、`touchAxis`、`endFrame()` |
 | `audio.js` | WebAudio 合成音效 + 音檔 | `Sfx.tone/noise`、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | 粒子 / 震動 / hitstop | `Fx.burst/dust/spark/shake/hitstop/update/draw/reset` |
@@ -26,6 +26,10 @@
 | `net.js` | 區網連線（房主權威） | `Net.connect/close/send/update`、`Net.remote`（加入端輸入）、`Net.produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
 
 **約定**：`G` 是引擎的全域 App 物件，`GAME_W` / `GAME_H` 是世界尺寸。遊戲自己的狀態請另開物件（範例用 `GS`），不要塞進 `G`。
+
+**圖形變形**：`drawSprite` / `drawSheet` / `drawDirSheet` / `drawCrop` 的 `opt` 都支援
+`flipX`、`flipY`、`rot`（弧度）、`pivot`（軸心）。完整說明（含軸心語意、90° 佔位互換範例、
+像素遊戲注意事項）→ **[`docs/api-sprite.md`](docs/api-sprite.md)**。
 
 ---
 

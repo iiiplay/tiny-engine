@@ -22,6 +22,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 - **排行榜**：過關時間自動存 localStorage，破紀錄會顯示「新紀錄」
 - **精靈動畫**：6 格走近動畫（素材是 `demo/tools/make_art.py` 程式產生的，沒有授權問題）
 - **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
+- **v1.4 驗收頁**：`demo/v14.html`（`drawSprite` 的翻轉 ⇄ / 顛倒 ⇅ / 旋轉 ⟳ + 軸心 pivot）
 - **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
 
 ---
@@ -100,8 +101,8 @@ window.addEventListener('load', async () => {
 |---|---|
 | `util.js` | `GAME_W` / `GAME_H`、`U.clamp/rand/lerp/dist/overlap/seeded/pick`、`DIRV` |
 | `core.js` | **`G`**（canvas/ctx/scale/safe/view/state/time）、**`Display.init/layout/toWorld`**、**`Camera`**、**`Loop`** |
-| `assets.js` | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop`、`shadow()` |
-| `sprite.js` | `new Sprite(fps, loop)` → `.set/.update/.draw`、`.frame`、`.done` |
+| `assets.js` | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、**`drawSprite(img, sx,sy,sw,sh, dx,dy,dw,dh, opt)`**、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop`、`shadow()` |
+| `sprite.js` | `new Sprite(fps, loop)` → `.set/.update/.draw`、`.frame`、`.done`、`drawDirSheet(sheet, dir, frame, x, y, opt)` |
 | `input.js` | `Input.init(map)`、`isDown`、`justPressed`、`moveAxis()`、`touchAxis`、`endFrame()` |
 | `audio.js` | `Sfx.tone/noise`（合成）、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | `Fx.burst/dust/spark/shake/hitstop/update/draw` |
@@ -112,7 +113,7 @@ window.addEventListener('load', async () => {
 | `touch.js` | `TouchUI.showIn / setButtons / extra`、`init/update/draw/resize`、`Screen`、`buzz()` |
 | `net.js` | `Net.connect/close/send/update`、`Net.remote`、`produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
 
-### 三個最常用的細節
+### 四個最常用的細節
 
 ```js
 // 1) 鏡頭（捲動世界）
@@ -127,7 +128,14 @@ Loop.fixedStep = 1 / 60;      // >0 啟用；落後時最多補跑 Loop.maxSteps
 Pathfind.build({ cell: 8, w: WORLD.w, h: WORLD.h });      // 場地變了要重建
 const path = Pathfind.find(e.x, e.y, player.x, player.y); // [{x,y}, ...]
 if (path[0]) { /* 往 path[0] 走，到了就 shift() */ }
+
+// 4) 翻轉 / 旋轉（v1.4；素材只有單一朝向時很好用）
+drawSheet(hero, f, x, y, { flipX: true });                        // 左右鏡像
+drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: Math.PI / 2 });  // 轉 90°
+drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: t, pivot: { x: px, y: py } });  // 繞指定軸心
 ```
+
+→ 完整參數、軸心語意、像素注意事項：**[`docs/api-sprite.md`](docs/api-sprite.md)**
 
 ---
 
@@ -256,6 +264,7 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 
 - [`STATUS.md`](STATUS.md) — 目前版本、已完成/待辦、效能數據、常用指令（**接手先看這個**）
 - [`CHANGELOG.md`](CHANGELOG.md) — 每個版本做了什麼
+- [`docs/api-sprite.md`](docs/api-sprite.md) — 圖形變形 API（`drawSprite` / `flipX` / `flipY` / `rot` / `pivot`）
 
 ## 第一款正式遊戲
 

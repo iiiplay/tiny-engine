@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.3.1**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.4.0**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -42,6 +42,9 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | **v1.3** 音量 `Sfx.setMaster` / `Sfx.mute` | ✅ | 靜音時 gain 歸零 |
 | **v1.3** 單檔打包 `tools/pack.py` → `engine/dist/tiny-engine.js` | ✅ | 73.5KB、`node --check`、`--check` 同步 |
 | **v1.3.1** `Save.migrate` 升級後寫回（desktop-hero 接入時發現） | ✅ | v1 存檔 → 版本變 2、資料正確 |
+| **v1.4** 圖形變形 `drawSprite` + `flipX`/`flipY`/`rot`/`pivot` | ✅ | `tools/v14.py` 26 項像素級檢查全過 |
+| **v1.4** `drawSheet`/`drawDirSheet`/`drawCrop` 都吃變形參數（包裝同一支 `drawSprite`） | ✅ | 同上；不變形時仍是一次 `drawImage` |
+| **v1.4** 文件 `docs/api-sprite.md`（參數／軸心語意／90° 佔位互換範例） | ✅ | README / engine/README 互連 |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |
@@ -65,6 +68,7 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 python tools/serve.py                 # 起伺服器（自動挑埠 + QR）
 python tools/shot.py  <url>           # 冒煙測試（有 console 錯誤就 exit 1）
 python tools/v13.py   <url>           # v1.3 驗收（Scene/UI/離線/節流/成本）
+python tools/v14.py   <url>           # v1.4 驗收（翻轉／旋轉／軸心，26 項像素檢查）
 python tools/pack.py                  # 合成單檔 engine/dist/tiny-engine.js
 python tools/soak.py 20 <url>         # 亂走 20 秒
 python tools/bench.py <url>/bench.html # 效能（fps < 45 失敗）
@@ -74,18 +78,19 @@ python demo/tools/make_art.py         # 重新產生 demo 精靈
 python demo/tools/make_audio.py       # 重新產生音效 + BGM
 ```
 
-## 還沒做（v1.3 候選）
+## 還沒做（v1.4 之後的候選）
 
-1. **音樂與音效的混音控制**（目前只有 `musicGain` / `clipGain`，沒有音量選單）
-2. **場景／房間系統**（目前狀態機由遊戲自己寫；可抽成 `Scene` 管理器）
-3. **關卡資料格式**（JSON）＋ 簡易編輯器（`?edit=1`）
-4. **打包**：把 13 支檔案合成一支 `tiny-engine.js`（給不想管載入順序的人）
-5. **rollback netcode**（固定時間步已經有了，缺輸入預測）
+1. **混音音量選單**（`Sfx.setMaster` 有了，缺 UI 元件）
+2. **JSON 關卡格式**＋ 簡易編輯器（`?edit=1`）
+3. **rollback netcode**（固定時間步已經有了，缺輸入預測）
+4. **9-slice 以外的 UI 佈局**（自動換行 / flex 般的排列）
+5. **像素旋轉的取巧版**：90° 以外的角度先降到最近 90°（避免糊），需要的話再加
 
 ## 已知限制
 
 - 3D／等角／骨骼動畫／shader → 不做
 - 物理只有 AABB（沒有旋轉、斜坡、關節）
+- 圖形變形只有**鏡像 + 任意角度旋轉**；非 90° 倍數在像素風格下會糊（引擎不阻擋，文件有警告）
 - 沒有視覺化編輯器、沒有通用腳本語言
 - 區網只支援 2 人
 

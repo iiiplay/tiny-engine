@@ -11,7 +11,9 @@ const DIR_NAMES = ['down', 'left', 'up', 'right'];
    用法：
      const S = sheetOf(assetDef('hero.png', 4, 16, 16, { rows: 4 }));
      drawDirSheet(S, 'right', 2, x, y, { scale: 1.5 });
-   (x, y) 一樣是「腳底中心」，所以四方向動畫不會抖動。 */
+   (x, y) 一樣是「腳底中心」，所以四方向動畫不會抖動。
+   opt 額外支援 flipX / flipY / rot / pivot（同 drawSprite；預設繞圖框中心）：
+     想讓「左走圖」當「右走圖」用 → drawDirSheet(S, 'left', f, x, y, { flipX: true }) */
 function drawDirSheet(s, dir, frame, x, y, o) {
   if (!s) return;
   o = o || {};
@@ -22,12 +24,16 @@ function drawDirSheet(s, dir, frame, x, y, o) {
   const n = s.frames || 1;
   const f = ((frame | 0) % n + n) % n;
   const img = o.white ? s.white : s.img;
-  const px = Math.round(x - (fw * sc) / 2 + (o.ox || 0));
-  const py = Math.round(y - (s.foot != null ? s.foot : fh) * sc + (o.oy || 0));
-  const a = o.alpha != null ? o.alpha : 1;
-  if (a !== 1) ctx.globalAlpha = a;
-  ctx.drawImage(img, f * fw, row * fh, fw, fh, px, py, Math.ceil(fw * sc), Math.ceil(fh * sc));
-  if (a !== 1) ctx.globalAlpha = 1;
+  const ox = o.ox || 0, oy = o.oy || 0;
+  const px = Math.round(x - (fw * sc) / 2 + ox);
+  const py = Math.round(y - (s.foot != null ? s.foot : fh) * sc + oy);
+  drawSprite(img, f * fw, row * fh, fw, fh,
+    px, py, Math.ceil(fw * sc), Math.ceil(fh * sc), {
+      flipX: o.flipX, flipY: o.flipY, rot: o.rot,
+      pivot: o.pivot,
+      alpha: o.alpha != null ? o.alpha : 1,
+      target: ctx,
+    });
 }
 
 class Sprite {
