@@ -119,6 +119,9 @@ const Camera = {
   target: null,               // { x, y } 或函式
   bounds: null,               // { x, y, w, h } 世界邊界（不讓鏡頭露出邊）
   offsetY: -8,                // 讓角色比畫面中央略低
+  view: null,                 // v1.5：只捲「畫面的一塊」（例如 HUD 下方的遊戲區）
+  shakeT: 0, shakeMag: 0,     // v1.5：震動（爆炸、受擊）
+  sx: 0, sy: 0,               // 這一帧的震動位移
 
   /* 直接把鏡頭對準某點（不插值） */
   snapTo(x, y) {
@@ -134,9 +137,16 @@ const Camera = {
     return this;
   },
 
+  /* v1.5：只捲 sub-viewport（例如 HUD 16px 下面的遊戲區）
+     Camera.setView(240, 208) → 之後 clamp / 置中都用這個尺寸 */
+  setView(w, h) {
+    this.view = (w && h) ? { w, h } : null;
+    return this;
+  },
+
   /* 畫面可見的邏輯範圍 */
-  viewW() { return GAME_W; },
-  viewH() { return GAME_H; },
+  viewW() { return (this.view && this.view.w) || GAME_W; },
+  viewH() { return (this.view && this.view.h) || GAME_H; },
 
   clamp() {
     const b = this.bounds;
@@ -149,7 +159,15 @@ const Camera = {
     this.y = U.clamp(this.y, b.y, b.y + Math.max(0, b.h - this.viewH()));
   },
 
+  /* 震動（mag = 幾 px，t = 幾秒）；每帧只抖一次，apply/push 會吃到同一個位移 */
+  shake(mag, t) {
+    this.shakeMag = Math.max(this.shakeMag, mag);
+    this.shakeT = Math.max(this.shakeT, t);
+    return this;
+  },
+
   update(dt) {
+    this._shakeStep(dt);
     if (!this.enabled) return;
     const t = typeof this.target === 'function' ? this.target() : this.target;
     if (!t) return;
@@ -159,12 +177,45 @@ const Camera = {
     this.clamp();
   },
 
-  /* 把 camera 套到 ctx（scale 通常是 G.scale） */
+  /* 把 camera 套到 ctx（scale 通常是 G.scale）
+     注意：這支會 setTransform，會蓋掉你原本的裁切/位移。
+     要「只捲遊戲區、HUD 不跟著動」請用 push()/pop()。 */
   apply(ctx, scale) {
-    const sx = -Math.round(this.x) * (scale || 1);
-    const sy = -Math.round(this.y) * (scale || 1);
+    const sx = -Math.round(this.x + this.sx) * (scale || 1);
+    const sy = -Math.round(this.y + this.sy) * (scale || 1);
     ctx.setTransform(scale || 1, 0, 0, scale || 1, sx, sy);
   },
+
+  _shakeStep(dt) {
+    if (this.shakeT <= 0) { this.sx = 0; this.sy = 0; this.shakeMag = 0; return; }
+    this.shakeT -= dt;
+    const s = this.shakeMag * Math.max(0, this.shakeT / Math.max(0.001, this.shakeT + dt));
+    this.sx = U.rand(-s, s);
+    this.sy = U.rand(-s, s);
+    if (this.shakeT <= 0) { this.sx = 0; this.sy = 0; this.shakeMag = 0; }
+  },
+
+  /* v1.5：可組合的鏡頭（save → 裁切 → 位移），畫完呼叫 pop() 還原
+       Camera.push(ctx, G.scale, { x: 0, y: 16, clip: {x:0,y:16,w:240,h:208} });
+       ...畫世界（世界座標）...
+       Camera.pop(ctx);
+     之後照樣可以在同一帧畫 HUD（不會被鏡頭影響）。 */
+  push(ctx, scale, opt) {
+    opt = opt || {};
+    ctx.save();
+    if (opt.clip) {
+      const c = opt.clip;
+      ctx.beginPath();
+      ctx.rect(c.x, c.y, c.w, c.h);
+      ctx.clip();
+    }
+    ctx.setTransform(scale || 1, 0, 0, scale || 1, 0, 0);
+    ctx.translate((opt.x || 0) - Math.round(this.x + this.sx),
+      (opt.y || 0) - Math.round(this.y + this.sy));
+    return ctx;
+  },
+
+  pop(ctx) { ctx.restore(); },
 
   /* 世界座標 → 邏輯螢幕座標（給 UI/點擊用） */
   toScreen(x, y) { return { x: x - this.x, y: y - this.y }; },

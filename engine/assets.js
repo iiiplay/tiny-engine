@@ -51,7 +51,10 @@ function sheetOf(def) {
 function collectSheets(manifest) {
   const out = {};
   const walk = (o) => {
-    if (!o || typeof o !== 'object') return;
+    if (!o) return;
+    // v1.5：manifest 可以直接寫路徑字串（陣列也可以）
+    if (typeof o === 'string') { out[o] = { src: o, frames: 1 }; return; }
+    if (typeof o !== 'object') return;
     if (o.src) { out[o.src] = o; return; }
     for (const k in o) walk(o[k]);
   };
@@ -165,6 +168,40 @@ function drawCrop(def, sx, sy, sw, sh, dx, dy, alpha, target, o) {
   if (alpha != null) opts.alpha = alpha;
   if (target || opts.target) opts.target = target || opts.target;
   drawSprite(t.img, sx, sy, sw, sh, Math.round(dx), Math.round(dy), sw, sh, opts);
+}
+
+/* ------------------------------------------------------------------
+   逐格動畫（素材是「一格一張 PNG」時用）
+   ------------------------------------------------------------
+   很多素材包不給 sprite sheet，而是一堆 bomb_anim_f0.png ~ f9.png。
+   這兩支讓你不用自己寫陣列索引：
+     frameOf(['b0.png','b1.png'], t, 10)          → 取這一帧的 Image
+     drawFrames(['b0.png','b1.png'], t, 10, x, y) → 直接畫（預設以中心對齊）
+   ------------------------------------------------------------------ */
+function frameOf(list, t, fps) {
+  if (!list || !list.length) return null;
+  const n = list.length;
+  const f = (t || 0) * (fps || 8);
+  let i = Math.floor(isFinite(f) ? f : 0) % n;
+  if (i < 0) i += n;
+  const it = list[i];
+  const src = typeof it === 'string' ? it : (it && it.src);
+  return (src && ASSETS[src]) || null;
+}
+
+/* opt：anchor 'center'（預設）| 'foot' | 'topleft'、scale、flipX/flipY/rot、alpha、target */
+function drawFrames(list, t, fps, x, y, opt) {
+  const img = frameOf(list, t, fps);
+  if (!img) return false;
+  const o = opt || {};
+  const sc = o.scale || 1;
+  const dw = Math.round(img.width * sc), dh = Math.round(img.height * sc);
+  let dx, dy;
+  if (o.anchor === 'foot') { dx = x - dw / 2; dy = y - dh; }
+  else if (o.anchor === 'topleft') { dx = x; dy = y; }
+  else { dx = x - dw / 2; dy = y - dh / 2; }
+  drawSprite(img, 0, 0, img.width, img.height, Math.round(dx), Math.round(dy), dw, dh, o);
+  return true;
 }
 
 /* 影子（讓物件有落地感） */

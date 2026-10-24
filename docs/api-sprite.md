@@ -104,6 +104,23 @@ drawDirSheet(hero, 'left', f, x, y, { flipX: true });
 drawDirSheet(hero, 'down', f, x, y, { rot: spin, pivot: { x, y: y - 8 } });
 ```
 
+### 逐格動畫：`frameOf(list, t, fps)` / `drawFrames(list, t, fps, x, y, opt)`
+
+素材不是 sprite sheet，而是「一格一張 PNG」（`bomb_anim_f0.png` ~ `f9.png`）時用這兩支：
+
+```js
+const BOMB = ['props/bomb_f0.png', 'props/bomb_f1.png', /* ... */];
+
+frameOf(BOMB, t, 10);                            // → 這一帧的 Image（負時間也安全）
+drawFrames(BOMB, t, 10, x, y);                    // 以中心對齊畫
+drawFrames(BOMB, t, 10, x, y, { anchor: 'foot' }); // 腳底對齊（角色）
+drawFrames(BOMB, t, 10, x, y, { scale: 2, flipX: true, alpha: 0.6 });
+```
+
+`anchor` = `'center'`（預設）/ `'foot'` / `'topleft'`；`flipX/flipY/rot/alpha/target`
+跟 `drawSprite` 完全一樣。清單可以直接是路徑字串陣列（`collectSheets` 與
+`loadAll` 在 v1.5 起支援 manifest 裡寫純路徑）。
+
 ### `drawCrop(def, sx, sy, sw, sh, dx, dy, alpha, target, opt)`
 
 從 tileset 裁一塊 prefab 貼圖（`dx, dy` 會四捨五入，像素對齊）。
@@ -198,6 +215,7 @@ drawSprite(img, sx, sy, sw, sh,
 | 版本 | 內容 |
 |---|---|
 | **v1.4.0** | 新增 `drawSprite()`；`drawSheet` / `drawDirSheet` / `drawCrop` 支援 `flipX` / `flipY` / `rot` / `pivot`；`demo/v14.html` + `tools/v14.py`（26 項像素級驗收） |
+| **v1.5.0** | 新增逐格動畫 `frameOf` / `drawFrames`；manifest 支援純路徑字串；`demo/v15.html` + `tools/v15.py` |
 
 ```bash
 python tools/serve.py                                   # → http://localhost:8766/demo/v14.html

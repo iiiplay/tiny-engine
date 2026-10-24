@@ -19,6 +19,7 @@
 | `audio.js` | WebAudio 合成音效 + 音檔 | `Sfx.tone/noise`、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | 粒子 / 震動 / hitstop | `Fx.burst/dust/spark/shake/hitstop/update/draw/reset` |
 | `physics.js` | AABB 碰撞 | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds`（活動邊界，捲動世界必設） |
+| `grid.js` | **格子世界**（tile 碰撞 + BFS） | `Grid.setup/create/createFromTiles`、`solid/setTile/setBlock`、`moveX/moveY/alignTo`、`field({from,cells,block,diagonal})`、`downhill/route`、`freeCells/forEach` |
 | `pathfind.js` | 格子 A* | `Pathfind.build({cell,w,h,pad})`、`.find(x1,y1,x2,y2)`、`.lineClear()`、`.smooth()` |
 | `save.js` | 存檔 / 排行榜 | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |
 | `ui.js` | 文字與面板 | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
@@ -28,8 +29,12 @@
 **約定**：`G` 是引擎的全域 App 物件，`GAME_W` / `GAME_H` 是世界尺寸。遊戲自己的狀態請另開物件（範例用 `GS`），不要塞進 `G`。
 
 **圖形變形**：`drawSprite` / `drawSheet` / `drawDirSheet` / `drawCrop` 的 `opt` 都支援
-`flipX`、`flipY`、`rot`（弧度）、`pivot`（軸心）。完整說明（含軸心語意、90° 佔位互換範例、
-像素遊戲注意事項）→ **[`docs/api-sprite.md`](docs/api-sprite.md)**。
+`flipX`、`flipY`、`rot`（弧度）、`pivot`（軸心）；素材是「一格一張 PNG」時用
+`frameOf()` / `drawFrames()`。→ **[`docs/api-sprite.md`](docs/api-sprite.md)**
+
+**格子遊戲**：`Grid` 提供 tile 碰撞（撞牆不反彈、不卡死）與 BFS 距離場
+（`field` / `downhill` / `route`），捲動世界請搭 `Camera.setView` + `Camera.push/pop`。
+→ **[`docs/api-grid.md`](docs/api-grid.md)**
 
 ---
 

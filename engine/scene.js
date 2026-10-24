@@ -17,6 +17,7 @@ const Scene = {
   def: null,
   params: null,
   t: 0,                 // 進入這個場景後經過的秒數
+  syncState: false,     // v1.5：true = 切場景時順便改 G.state（TouchUI 靠它判斷）
   overlayDef: null,     // 覆蓋層（不影響 Scene.update）
   overlayT: 0,
   _attached: false,
@@ -35,6 +36,7 @@ const Scene = {
     this.def = def;
     this.params = params || {};
     this.t = 0;
+    if (this.syncState) G.state = name;      // v1.5：讓 TouchUI / 存檔等機制跟著場景走
     if (def.enter) def.enter(this.params);
     return true;
   },

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyEngine v1.5 — Grid / 逐格動畫 / Camera.push 驗收</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0f18; overflow: hidden;
+    font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; user-select: none; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; image-rendering: pixelated; border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6); background: #121a26; }
+  #hint { position: fixed; left: 14px; bottom: 12px; color: #64718a; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="hint">v1.5 驗收頁：Grid（碰撞／BFS 距離場）、逐格動畫、Camera.push、Scene.syncState</div>
+
+<script src="../engine/util.js?v=1.5"></script>
+<script src="../engine/core.js?v=1.5"></script>
+<script src="../engine/assets.js?v=1.5"></script>
+<script src="../engine/sprite.js?v=1.5"></script>
+<script src="../engine/input.js?v=1.5"></script>
+<script src="../engine/fx.js?v=1.5"></script>
+<script src="../engine/grid.js?v=1.5"></script>
+<script src="../engine/scene.js?v=1.5"></script>
+<script src="../engine/ui.js?v=1.5"></script>
+<script>
+GAME_W = 400;
+
+const CASES = [];
+function checkTrue(name, got, detail) {
+  CASES.push({ name, ok: !!got, detail: detail == null ? '' : String(detail) });
+}
+function check(name, got, want) {
+  const ok = (want === undefined) ? !!got : (got === want);
+  CASES.push({ name, ok, detail: ok ? String(got) : ('得到 ' + String(got) + '，預期 ' + String(want)) });
+}
+
+/* ---------- 測試用小工具 ---------- */
+function makeSolid(color, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w || 4; c.height = h || 4;
+  const x = c.getContext('2d');
+  x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+function loadImg(canvas) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = canvas.toDataURL();
+  });
+}
+function offCtx(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w || 16; c.height = h || 16;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  return x;
+}
+function px(ctx, x, y) {
+  const d = ctx.getImageData(x, y, 1, 1).data;
+  return d[0] + ',' + d[1] + ',' + d[2] + ',' + d[3];
+}
+
+/* ============================================================
+   1) Grid：碰撞
+   ============================================================ */
+function testGridCollision() {
+  // 10×8 的房間：外框是牆(1)，中間一條直牆
+  const g = Grid.create({ cell: 16, cols: 10, rows: 8 });
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 10; x++) {
+    if (x === 0 || y === 0 || x === 9 || y === 7) g.setTile(x, y, 1);
+  }
+  for (let y = 1; y < 7; y++) g.setTile(5, y, 1);       // 中間牆
+
+  check('setup 尺寸', [g.cols, g.rows, g.tiles.length].join(','), '10,8,80');
+  check('外框算牆', g.solid(0, 3) && g.solid(9, 3), true);
+  check('內部算可走', g.solid(2, 3), false);
+  check('passTiles 可以穿木桶', (() => {
+    g.setTile(3, 3, 2);
+    const ghost = { passTiles: [2] };
+    const normal = {};
+    const a = g.solid(3, 3, normal), b = g.solid(3, 3, ghost);
+    g.setTile(3, 3, 0);
+    return a === true && b === false;
+  })());
+  check('block callback（臨時障礙）', (() => {
+    g.setBlock((cx, cy) => cx === 4 && cy === 4);
+    const a = g.solid(4, 4);
+    g.setBlock(null);
+    return a === true && g.solid(4, 4) === false;
+  })());
+
+  // 往右撞中間牆：停在牆的左邊（x = 5*16 - r）
+  const e = { x: 16 + 8, y: 16 + 8, r: 6 };
+  let hit = false;
+  for (let i = 0; i < 60; i++) hit = g.moveX(e, 2) || hit;
+  checkTrue('往右撞牆會停住', Math.abs(e.x - (5 * 16 - 6)) < 0.001, 'x=' + e.x.toFixed(2));
+  check('撞牆回傳 true', hit, true);
+
+  // 關鍵回歸：人被塞進牆裡時，「往外走」不能被反彈到另一邊
+  const stuck = { x: 5 * 16 + 8, y: 3 * 16 + 8, r: 6 };   // 站在中間牆裡面
+  const before = stuck.x;
+  g.moveX(stuck, -2);                                    // 往左走（離開牆）
+  checkTrue('在牆裡往外走不會被反彈', stuck.x <= before, 'x=' + stuck.x.toFixed(1));
+
+  // 站在「自己這格是實心」時，可以繼續移動（炸彈人的情境）
+  const onBomb = { x: 2 * 16 + 8, y: 3 * 16 + 8, r: 6 };
+  g.setBlock((cx, cy) => cx === 2 && cy === 3);           // 自己腳下是炸彈
+  const y0 = onBomb.y;
+  g.moveY(onBomb, 2);
+  checkTrue('腳下是實心也能走動（不會卡死）', onBomb.y > y0, '移動 ' + (onBomb.y - y0).toFixed(1) + 'px');
+  g.setBlock(null);
+
+  // 走廊對齊
+  const off = { x: 2 * 16 + 8, y: 3 * 16 + 11 };          // 偏下 3px
+  g.alignTo(off, 'y', 1 / 60, 90);
+  checkTrue('alignTo 會往中線拉', off.y < 3 * 16 + 11 && off.y > 3 * 16 + 8, 'y=' + off.y.toFixed(2));
+
+  // 4px 的角色可以進 1 格寬的走廊（r=6 → 12px < 16px）
+  const slim = { x: 2 * 16 + 8, y: 3 * 16 + 8, r: 6 };
+  let blocked = false;
+  for (let i = 0; i < 20; i++) blocked = g.moveY(slim, 2) || blocked;
+  checkTrue('1 格寬走廊走得過（12px < 16px）', !blocked && g.cellOf(slim.y) === 6, 'cell=' + g.cellOf(slim.y));
+  return g;
+}
+
+/* ============================================================
+   2) Grid：BFS 距離場 / 下坡 / 路線
+   ============================================================ */
+function testGridPath() {
+  const g = Grid.create({ cell: 16, cols: 9, rows: 7 });
+  for (let y = 0; y < 7; y++) for (let x = 0; x < 9; x++) {
+    if (x === 0 || y === 0 || x === 8 || y === 6) g.setTile(x, y, 1);
+  }
+  // 一道牆把地圖切一半，只留 (6,3) 這個缺口
+  for (let y = 1; y < 6; y++) if (y !== 3) g.setTile(4, y, 1);
+
+  const f = g.field({ from: { cx: 1, cy: 1 } });
+  check('BFS：來源 = 0', f[g.idx(1, 1)], 0);
+  check('BFS：直線距離', f[g.idx(3, 1)], 2);
+  check('BFS：牆 = -1', f[g.idx(4, 1)], -1);
+  // (1,1) → 要下到第 3 列、過缺口、再上來：5 + 2×2 = 9
+  check('BFS：繞過缺口才到得了', f[g.idx(6, 1)], 9);
+  check('BFS：到不了的區域 = -1', (() => {
+    const g2 = Grid.create({ cell: 16, cols: 5, rows: 5 });
+    g2.setTile(2, 2, 1); g2.setTile(2, 1, 1); g2.setTile(2, 3, 1); g2.setTile(1, 2, 1); g2.setTile(3, 2, 1);
+    const ff = g2.field({ from: { cx: 0, cy: 0 } });
+    return ff[g2.idx(2, 2)];
+  })(), -1);
+
+  // 多來源
+  const f2 = g.field({ cells: [{ cx: 1, cy: 1 }, { cx: 7, cy: 5 }] });
+  check('BFS：多來源都有 0', f2[g.idx(1, 1)] === 0 && f2[g.idx(7, 5)] === 0, true);
+
+  // 下坡：從 (6,5) 往 field 的來源 (1,1) 走，每一步 field 都要變小
+  const route = g.route(f, 6, 5);
+  let ok = route.length > 0;
+  let prev = f[g.idx(6, 5)];
+  let cx = 6, cy = 5;
+  for (const c of route) {
+    if (f[g.idx(c.cx, c.cy)] >= prev) ok = false;
+    prev = f[g.idx(c.cx, c.cy)];
+    cx = c.cx; cy = c.cy;
+  }
+  checkTrue('route：一路下坡且走到目標 (1,1)', ok && cx === 1 && cy === 1,
+    cx + ',' + cy + ' / ' + route.length + ' 步');
+  checkTrue('route：步數 = BFS 距離', route.length === f[g.idx(6, 5)], route.length + ' / ' + f[g.idx(6, 5)]);
+
+  // avoid：繞開某格
+  const avoid = new Uint8Array(9 * 7);
+  avoid[g.idx(4, 3)] = 1;                        // 把缺口 (4,3) 堵住
+  const f3 = g.field({ from: { cx: 1, cy: 1 }, block: (x, y) => avoid[g.idx(x, y)] });
+  check('field 的 block 會影響連通', f3[g.idx(6, 5)], -1);
+  const f3b = g.field({ from: { cx: 1, cy: 1 } });
+  checkTrue('沒堵住時走得過去', f3b[g.idx(6, 5)] > 0, f3b[g.idx(6, 5)]);
+
+  // 8 方向：不切角
+  // 只有對角可走的路 → 8 方向也不能切過去
+  const g3 = Grid.create({ cell: 16, cols: 5, rows: 5 });
+  for (let i = 0; i < 5; i++) { g3.setTile(i, 0, 1); g3.setTile(i, 4, 1); g3.setTile(0, i, 1); g3.setTile(4, i, 1); }
+  g3.setTile(2, 1, 1); g3.setTile(1, 2, 1);     // (2,2) 只能靠對角線進去
+  const f4 = g3.field({ from: { cx: 1, cy: 1 }, diagonal: true });
+  check('8 方向不切角', f4[g3.idx(2, 2)], -1);
+
+  // ignoreTiles：某種 tile 當成可走（飛行敵人穿木桶）
+  const g4 = Grid.create({ cell: 16, cols: 5, rows: 3 });
+  for (let x = 0; x < 5; x++) { g4.setTile(x, 0, 1); g4.setTile(x, 2, 1); }
+  g4.setTile(2, 1, 2);                              // 中間一格是木桶
+  const groundF = g4.field({ from: { cx: 0, cy: 1 } });
+  const airF = g4.field({ from: { cx: 0, cy: 1 }, ignoreTiles: [2] });
+  check('地面單位過不去木桶', groundF[g4.idx(3, 1)], -1);
+  check('ignoreTiles 讓木桶可穿', airF[g4.idx(3, 1)], 3);
+
+  // 兩張獨立地圖互不影響
+  const m1 = Grid.create({ cell: 16, cols: 4, rows: 4 });
+  const m2 = Grid.create({ cell: 16, cols: 6, rows: 3 });
+  m1.setTile(1, 1, 1);
+  check('Grid.create 兩張地圖互不影響',
+    [m1.cols, m1.rows, m1.solid(1, 1), m2.cols, m2.rows, m2.solid(1, 1)].join(','),
+    '4,4,true,6,3,false');
+  return g;
+}
+
+/* ============================================================
+   3) 逐格動畫 / manifest 純路徑
+   ============================================================ */
+async function testFrames() {
+  const red = await loadImg(makeSolid('#ff0000', 8, 8));
+  const blue = await loadImg(makeSolid('#0000ff', 8, 8));
+  const list = ['t/red.png', 't/blue.png'];
+  ASSETS['t/red.png'] = red;
+  ASSETS['t/blue.png'] = blue;
+
+  check('frameOf 取第 0 格', frameOf(list, 0, 10) === red, true);
+  check('frameOf 取第 1 格（t=0.1, fps=10）', frameOf(list, 0.1, 10) === blue, true);
+  check('frameOf 循環（t=0.2 → 第 0 格）', frameOf(list, 0.2, 10) === red, true);
+  check('frameOf 負時間不會爆', frameOf(list, -0.05, 10) === blue || frameOf(list, -0.05, 10) === red, true);
+  check('frameOf 空陣列 → null', frameOf([], 1, 10), null);
+
+  const c1 = offCtx(16, 16);
+  drawFrames(list, 0, 10, 8, 8, { target: c1 });         // 中心對齊 → 佔 (4,4)-(11,11)
+  check('drawFrames 中心對齊 → 紅', px(c1, 8, 8), '255,0,0,255');
+  const c2 = offCtx(16, 16);
+  drawFrames(list, 0.1, 10, 8, 8, { target: c2 });       // 第 1 格 → 藍
+  check('drawFrames 動畫換格 → 藍', px(c2, 8, 8), '0,0,255,255');
+  const c3 = offCtx(16, 16);
+  drawFrames(list, 0, 10, 8, 16, { target: c3, anchor: 'foot' });  // 腳底對齊 → 佔 y 8..15
+  check('drawFrames anchor:foot', px(c3, 8, 12), '255,0,0,255');
+  check('drawFrames 沒圖時回傳 false', drawFrames(['nope.png'], 0, 10, 0, 0, { target: c1 }), false);
+
+  // manifest 直接寫路徑字串（v1.5）
+  const sheets = collectSheets({ a: ['x/1.png', 'x/2.png'], b: { src: 'y/1.png' } });
+  check('collectSheets 支援純路徑字串', Object.keys(sheets).sort().join(','), 'x/1.png,x/2.png,y/1.png');
+}
+
+/* ============================================================
+   4) Camera.push / pop（只捲遊戲區）
+   ============================================================ */
+async function testCamera() {
+  Camera.enabled = true;
+  Camera.setView(64, 48).snapTo(20, 30);       // 鏡頭左上角 = (20,30)（會被 clamp）
+  check('setView 生效', [Camera.viewW(), Camera.viewH()].join(','), '64,48');
+
+  const c = offCtx(100, 80);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = '#000'; c.fillRect(0, 0, 100, 80);
+  // 世界座標畫在 (20,30) 的方塊 → 應該落在畫面 (0,0)（加上 offset 0,10 → (0,10)）
+  Camera.push(c, 1, { x: 0, y: 10, clip: { x: 0, y: 10, w: 64, h: 48 } });
+  c.fillStyle = '#ff0000';
+  c.fillRect(20, 30, 8, 8);
+  Camera.pop(c);
+  check('Camera.push 位移正確', px(c, 2, 12), '255,0,0,255');
+  check('clip 外沒被畫到', px(c, 2, 2), '0,0,0,255');
+  // v1.5：震動（apply/push 會吃到同一個位移）
+  Camera.shake(3, 0.2);
+  Camera.update(0.01);
+  checkTrue('Camera.shake 有位移', Math.abs(Camera.sx) + Math.abs(Camera.sy) > 0,
+    Camera.sx.toFixed(1) + ',' + Camera.sy.toFixed(1));
+  Camera.shakeT = 0; Camera.update(0.01);
+  check('震動結束會歸零', Math.abs(Camera.sx) + Math.abs(Camera.sy), 0);
+
+  // pop 之後 transform 還原 → 畫在 (0,0) 就落在 (0,0)
+  c.fillStyle = '#00ff00';
+  c.fillRect(0, 0, 4, 4);
+  check('Camera.pop 還原 transform', px(c, 1, 1), '0,255,0,255');
+}
+
+/* ============================================================
+   5) Scene.syncState
+   ============================================================ */
+function testScene() {
+  Scene.syncState = true;
+  Scene.register('title', {});
+  Scene.register('play', {});
+  G.state = 'none';
+  Scene.go('title');
+  const a = G.state;
+  Scene.go('play');
+  const b = G.state;
+  Scene.syncState = false;
+  Scene.go('title');
+  check('Scene.syncState 會改 G.state', a + '>' + b, 'title>play');
+  check('關掉就不碰 G.state', G.state, 'play');
+  G.state = 'title';
+}
+
+/* ---------- 視覺展示 ---------- */
+function drawShowcase() {
+  const ctx = G.ctx;
+  ctx.setTransform(G.scale, 0, 0, G.scale, 0, 0);
+  ctx.fillStyle = '#121a26';
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+  text('Grid.field() — BFS 距離場（紅色是牆）', 12, 10, { size: 8, color: '#9fd0ff' });
+
+  const g = Grid.setup({ cell: 12, cols: 18, rows: 9 });
+  for (let y = 0; y < 9; y++) for (let x = 0; x < 18; x++) {
+    if (x === 0 || y === 0 || x === 17 || y === 8) g.setTile(x, y, 1);
+  }
+  for (let y = 1; y < 8; y++) if (y !== 4) g.setTile(6, y, 1);
+  const f = g.field({ from: { cx: 2, cy: 2 } });
+  const ox = 12, oy = 26;
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 18; x++) {
+      const v = f[g.idx(x, y)];
+      const wall = g.solid(x, y);
+      ctx.fillStyle = wall ? '#5b6b8a' : (v < 0 ? '#1b2230' : 'rgba(126,226,184,' + Math.max(0.08, 0.85 - v * 0.05).toFixed(2) + ')');
+      ctx.fillRect(ox + x * 12, oy + y * 12, 11, 11);
+      if (!wall && v >= 0) text(String(v), ox + x * 12 + 3, oy + y * 12 + 3, { size: 5, color: '#0b0e14', shadow: false });
+    }
+  }
+  text('綠 = 離起點幾步（缺口在左牆的第 4 列）', 12, oy + 9 * 12 + 6, { size: 6, color: '#64718a' });
+
+  // 逐格動畫
+  text('drawFrames() — 一格一張 PNG 的動畫', 12, 172, { size: 8, color: '#9fd0ff' });
+  const sheet = SRC15.frames;
+  for (let i = 0; i < 6; i++) {
+    drawFrames(sheet, Game2.t + i * 0.12, 8, 30 + i * 26, 200, { scale: 2 });
+  }
+  text('（同一份陣列、時間錯開 → 波浪效果）', 12, 212, { size: 6, color: '#64718a' });
+}
+
+const Game2 = { t: 0 };
+const SRC15 = { frames: [] };
+
+window.addEventListener('load', () => {
+  Display.init(document.getElementById('game'));
+  GAME_W = 400;
+  // 產生 6 格「逐格動畫」示範圖
+  (async () => {
+    for (let i = 0; i < 6; i++) {
+      const c = document.createElement('canvas');
+      c.width = 8; c.height = 8;
+      const x = c.getContext('2d');
+      x.fillStyle = ['#ff5a4a', '#ffb03a', '#ffd45e', '#7ee2b8', '#7fb3ff', '#c07bff'][i];
+      x.fillRect(1 + i % 3, 1, 5, 6);
+      const src = 'demo/frame' + i + '.png';
+      ASSETS[src] = await loadImg(c);
+      SRC15.frames.push(src);
+    }
+  })();
+
+  testScene();
+  testGridCollision();
+  testGridPath();
+  testCamera();
+  testFrames().then(() => {
+    window.V15 = {
+      version: TINY_ENGINE_VERSION,
+      pass: CASES.filter(c => c.ok).length,
+      fail: CASES.filter(c => !c.ok).length,
+      cases: CASES,
+    };
+    Loop.update = (dt) => { Game2.t += dt; };
+    Loop.render = () => drawShowcase();
+    Loop.start();
+  });
+});
+</script>
+</body>
+</html>

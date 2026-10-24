@@ -23,6 +23,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 - **精靈動畫**：6 格走近動畫（素材是 `demo/tools/make_art.py` 程式產生的，沒有授權問題）
 - **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
 - **v1.4 驗收頁**：`demo/v14.html`（`drawSprite` 的翻轉 ⇄ / 顛倒 ⇅ / 旋轉 ⟳ + 軸心 pivot）
+- **v1.5 驗收頁**：`demo/v15.html`（格子碰撞 / BFS 距離場 / 逐格動畫 / Camera.push）
 - **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
 
 ---
@@ -107,13 +108,14 @@ window.addEventListener('load', async () => {
 | `audio.js` | `Sfx.tone/noise`（合成）、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | `Fx.burst/dust/spark/shake/hitstop/update/draw` |
 | `physics.js` | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds` |
+| `grid.js` | **`Grid.setup/create`**、`solid/setBlock/moveX/moveY/alignTo`、**`field`**（BFS 距離場）、`downhill/route`、`freeCells` |
 | `pathfind.js` | `Pathfind.build({ cell, w, h, pad })`、`.find(x1,y1,x2,y2)`、`.lineClear()` |
 | `save.js` | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |
 | `ui.js` | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
 | `touch.js` | `TouchUI.showIn / setButtons / extra`、`init/update/draw/resize`、`Screen`、`buzz()` |
 | `net.js` | `Net.connect/close/send/update`、`Net.remote`、`produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
 
-### 四個最常用的細節
+### 六個最常用的細節
 
 ```js
 // 1) 鏡頭（捲動世界）
@@ -129,13 +131,23 @@ Pathfind.build({ cell: 8, w: WORLD.w, h: WORLD.h });      // 場地變了要重�
 const path = Pathfind.find(e.x, e.y, player.x, player.y); // [{x,y}, ...]
 if (path[0]) { /* 往 path[0] 走，到了就 shift() */ }
 
-// 4) 翻轉 / 旋轉（v1.4；素材只有單一朝向時很好用）
+// 4) 格子遊戲（v1.5）：碰撞 + 追逐用同一支
+Grid.setup({ cell: 16, cols: 30, rows: 13 });
+const f = Grid.field({ from: { cx: px, cy: py } });        // 以玩家為 0 的距離場
+const d = Grid.downhill(f, ex, ey);                        // 敵人往下坡走
+Grid.moveX(enemy, d.x * spd); Grid.moveY(enemy, d.y * spd);
+
+// 5) 逐格動畫（一格一張 PNG）
+drawFrames(SRC.bomb, t, 10, x, y, { anchor: 'center' });
+
+// 6) 翻轉 / 旋轉（v1.4；素材只有單一朝向時很好用）
 drawSheet(hero, f, x, y, { flipX: true });                        // 左右鏡像
 drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: Math.PI / 2 });  // 轉 90°
 drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: t, pivot: { x: px, y: py } });  // 繞指定軸心
 ```
 
 → 完整參數、軸心語意、像素注意事項：**[`docs/api-sprite.md`](docs/api-sprite.md)**
+→ 格子碰撞與 BFS 距離場：**[`docs/api-grid.md`](docs/api-grid.md)**
 
 ---
 
@@ -264,7 +276,8 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 
 - [`STATUS.md`](STATUS.md) — 目前版本、已完成/待辦、效能數據、常用指令（**接手先看這個**）
 - [`CHANGELOG.md`](CHANGELOG.md) — 每個版本做了什麼
-- [`docs/api-sprite.md`](docs/api-sprite.md) — 圖形變形 API（`drawSprite` / `flipX` / `flipY` / `rot` / `pivot`）
+- [`docs/api-grid.md`](docs/api-grid.md) — 格子世界 API（碰撞 / BFS 距離場 / 下坡走位）
+- [`docs/api-sprite.md`](docs/api-sprite.md) — 圖形變形與逐格動畫 API
 
 ## 第一款正式遊戲
 

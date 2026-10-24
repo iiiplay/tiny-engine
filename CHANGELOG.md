@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.5.0 — 2026-10-24
+
+> 主題：**格子遊戲需要的东西進引擎**。來自 tiny-bomber（炸彈人）實戰：
+> 移動碰撞、BFS 追逐、逐格動畫、只捲遊戲區的鏡頭 —— 這些以前每款遊戲都要重寫一次。
+
+### 新增 `engine/grid.js`（格子世界）
+- `Grid.setup / create / createFromTiles`：單例或多世界（`create()` 回傳獨立物件）
+- 碰撞：`Grid.solid / setBlock / setTile / moveX / moveY / alignTo / snap`
+  · **撞牆只往前夾、不往回彈**（以前的寫法在人站在障礙格裡時會把人彈到另一側＝穿牆）
+  · **自己所在那一格的障礙不算擋**（腳下剛放的炸彈不會把人鎖死）
+  · `e.passTiles = [2]` 讓特定實體穿過特定 tile（飛行敵人穿木桶）
+- 尋路：`Grid.field({from | cells, block, diagonal, maxDist, into})` → BFS 距離場
+  · 多來源、可傳 `block` 排除危險區、8 方向自動不切角、`into` 重複使用陣列
+- 走位：`Grid.downhill(field, cx, cy, {avoid})`、`Grid.route()`（走出整條路線）
+- 便利：`freeCells / countFree / forEach / idx / center / cellOf / reachable`
+
+### 逐格動畫（`engine/assets.js`）
+- `frameOf(list, t, fps)`、`drawFrames(list, t, fps, x, y, opt)`
+  · 素材是「一格一張 PNG」時不用自己算索引；anchor `center/foot/topleft`、支援 flip/rot
+- `collectSheets()` 現在吃 **純路徑字串**（manifest 可以直接寫 `{ bomb: ['f0.png','f1.png'] }`）
+
+### 鏡頭可組合（`engine/core.js`）
+- `Camera.setView(w, h)`：只捲 sub-viewport（例如 HUD 下面的遊戲區）
+- `Camera.push(ctx, scale, {x, y, clip})` / `Camera.pop(ctx)`
+  · 以前的 `apply()` 會 `setTransform`，把裁切/位移整個蓋掉 → 現在可以「世界捲動 + HUD 不動」
+
+### 場景（`engine/scene.js`）
+- `Scene.syncState = true`：`Scene.go()` 順便更新 `G.state`（`TouchUI` 靠它判斷）
+
+### 文件與驗收
+- 新檔 [`docs/api-grid.md`](docs/api-grid.md)：碰撞保證、距離場用法、三個範例
+  （敵人追逐／往最近目標走／算「放炸彈後跑得掉嗎」）、效能數據、注意事項
+- `docs/api-sprite.md` 補上逐格動畫章節
+- `demo/v15.html` + `tools/v15.py`：**39 項**（碰撞 11、距離場 13、動畫 9、鏡頭 3、場景 2、多世界 1）
+- 效能：60×26 地圖 `field()` **0.126ms**、`moveX+moveY` **0.065µs**
+- `tools/pack.py` 納入 `grid.js`（15 支 → dist 89.5KB）
+
 ## v1.4.0 — 2026-10-24
 
 > 主題：**圖形變形（翻轉／旋轉）進引擎**。來自 tiny-home「家具不能左右或顛倒擺」的需求 ——
