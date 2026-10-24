@@ -1,5 +1,5 @@
 /*! tiny-engine — 單檔版（由 tools/pack.py 產生，請勿手改）
- *  來源：engine/*.js  共 15 支
+ *  來源：engine/*.js  共 18 支
  *  授權：MIT
  */
 'use strict';
@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.5.1';
+const TINY_ENGINE_VERSION = '1.6.0';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -1501,6 +1501,521 @@ const Grid = {
   },
 };
 
+/* ---- engine/level.js ---- */
+/* ============================================================
+   engine/level.js — JSON 關卡（格子資料 + 物件 + 驗證）  v1.6
+   ------------------------------------------------------------
+   為什麼要有這一支：
+     以前的關卡資料寫在遊戲程式碼裡（`const ROADS = [...]`、`LEVELS = [...]`），
+     改一格要動 JS、也沒辦法丟給非工程師編。
+     Level 把「一張地圖」變成純資料（可以存 JSON、可以給編輯器編、可以上傳）。
+
+   一格 = 一個數字（0 = 可走，其他值的意思由遊戲決定；慣例 1 = 牆／路障）
+
+   兩種寫法都吃：
+     A) 機器格式（存檔用）
+        { v:1, cols:20, rows:12, cell:16, tiles:[0,0,1,...], objects:[...] }
+     B) 手寫格式（人看的）
+        { v:1, cols:8, legend:{'.':0,'#':1}, lines:['..#..','...'] }
+        （lines 會轉成 tiles，rows 由 lines.length 決定；
+          legend 沒給就 '.'=0、其他字元依序 1,2,3…；
+          舊寫法 { rows: ['..#..'] } 也吃，但 rows 同時是「列數」容易搞混，建議用 lines）
+   ============================================================ */
+
+const Level = {
+  v: 1,
+  cols: 0,
+  rows: 0,
+  cell: 16,
+  tiles: null,
+  objects: [],
+  meta: {},
+
+  /* ---------------- 建立 ---------------- */
+  /* 回傳「獨立」的關卡物件（多張地圖、測試都靠這個）
+     Level.load() / Level.loadSaved() 則是改「Level 自己」這個單例 */
+  create(opt) {
+    opt = opt || {};
+    const lv = Object.create(Level);
+    lv.v = 1;
+    lv.cols = opt.cols || 16;
+    lv.rows = opt.rows || 12;
+    lv.cell = opt.cell || 16;
+    lv.tiles = new Uint8Array(lv.cols * lv.rows);
+    if (opt.fill) lv.tiles.fill(opt.fill);
+    lv.objects = [];
+    lv.meta = opt.meta ? Object.assign({}, opt.meta) : {};
+    return lv;
+  },
+
+  /* 從資料直接產生一個獨立關卡（不改動 Level 單例） */
+  from(data) {
+    const lv = Object.create(Level);
+    lv.load(data);
+    return lv;
+  },
+
+  /* 從 JSON 物件或字串建立（會驗證，壞掉會丟出清楚的錯誤） */
+  load(data) {
+    const d = typeof data === 'string' ? JSON.parse(data) : data;
+    if (!d || typeof d !== 'object') throw new Error('[level] 不是物件');
+    const lines = Array.isArray(d.lines) ? d.lines : (Array.isArray(d.rows) ? d.rows : null);
+    const cols = d.cols | 0;
+    const rows = lines ? lines.length : (d.rows | 0);
+    if (!(cols > 0 && rows > 0)) throw new Error('[level] cols / rows 不合法');
+    this.cols = cols;
+    this.rows = rows;
+    this.cell = d.cell || 16;
+    this.meta = d.meta ? Object.assign({}, d.meta) : {};
+
+    if (lines && lines.length) {
+      /* 手寫格式：字串列 */
+      const legend = d.legend || null;
+      const auto = {};
+      let next = 1;
+      const mapChar = (ch) => {
+        if (legend && legend[ch] != null) return legend[ch] | 0;
+        if (!legend) {
+          if (ch === '.' || ch === ' ') return 0;
+          if (!(ch in auto)) auto[ch] = next++;
+          return auto[ch];
+        }
+        return 0;
+      };
+      const tiles = new Uint8Array(cols * rows);
+      for (let y = 0; y < rows; y++) {
+        const line = lines[y] || '';
+        if (line.length < cols) {
+          throw new Error('[level] 第 ' + y + ' 列只有 ' + line.length + ' 個字（要 ' + cols + '）');
+        }
+        for (let x = 0; x < cols; x++) tiles[y * cols + x] = mapChar(line[x]);
+      }
+      this.tiles = tiles;
+    } else if (d.tiles) {
+      if (d.tiles.length !== cols * rows) {
+        throw new Error('[level] tiles 長度 ' + d.tiles.length + '，應該是 ' + (cols * rows));
+      }
+      this.tiles = Uint8Array.from(d.tiles);
+    } else {
+      throw new Error('[level] 沒有 tiles 或 rows');
+    }
+
+    if (!this.tiles) throw new Error('[level] 沒有 tiles 或 lines');
+    this.objects = (d.objects || []).map(o => ({
+      type: o.type || 'object',
+      cx: o.cx | 0, cy: o.cy | 0,
+      data: o.data ? Object.assign({}, o.data) : null,
+    }));
+    const errs = this.validate();
+    const fatal = errs.filter(e => e.level === 'error');
+    if (fatal.length) throw new Error('[level] ' + fatal.map(e => e.msg).join('；'));
+    return this;
+  },
+
+  /* 存成純資料 */
+  export() {
+    return {
+      v: this.v,
+      cols: this.cols,
+      rows: this.rows,
+      cell: this.cell,
+      tiles: Array.from(this.tiles),
+      objects: this.objects.map(o => ({
+        type: o.type, cx: o.cx, cy: o.cy, data: o.data ? Object.assign({}, o.data) : undefined,
+      })),
+      meta: Object.assign({}, this.meta),
+    };
+  },
+
+  serialize(pretty) { return JSON.stringify(this.export(), null, pretty ? 2 : 0); },
+
+  /* 人看的格式（手改方便）
+     idToChar：{ 0:'.', 1:'#', 2:'~' }（tile 值 → 字元）
+     回傳的 legend 會轉成「字元 → tile 值」，可以直接丟回 load()。 */
+  exportRows(idToChar) {
+    const map = idToChar || { 0: '.' };
+    const back = {};
+    for (const k in map) back[Number(k)] = map[k];
+    const rows = [];
+    for (let y = 0; y < this.rows; y++) {
+      let line = '';
+      for (let x = 0; x < this.cols; x++) {
+        const t = this.tiles[y * this.cols + x];
+        line += back[t] != null ? back[t] : String(t);
+      }
+      rows.push(line);
+    }
+    const legend = {};
+    for (const k in map) legend[map[k]] = Number(k);
+    return { v: this.v, cols: this.cols, cell: this.cell, legend: legend, lines: rows };
+  },
+
+  /* ---------------- 讀寫格子 ---------------- */
+  idx(cx, cy) { return cy * this.cols + cx; },
+  inside(cx, cy) { return cx >= 0 && cy >= 0 && cx < this.cols && cy < this.rows; },
+  get(cx, cy) { return this.inside(cx, cy) ? this.tiles[this.idx(cx, cy)] : -1; },
+  set(cx, cy, v) {
+    if (!this.inside(cx, cy)) return this;
+    this.tiles[this.idx(cx, cy)] = v;
+    return this;
+  },
+  fillRect(x0, y0, x1, y1, v) {
+    for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
+      for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) this.set(x, y, v);
+    }
+    return this;
+  },
+  fillBorder(v) {
+    for (let x = 0; x < this.cols; x++) { this.set(x, 0, v); this.set(x, this.rows - 1, v); }
+    for (let y = 0; y < this.rows; y++) { this.set(0, y, v); this.set(this.cols - 1, y, v); }
+    return this;
+  },
+  forEach(cb) {
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) cb(x, y, this.tiles[y * this.cols + x]);
+    }
+  },
+  counts() {
+    const c = {};
+    for (let i = 0; i < this.tiles.length; i++) c[this.tiles[i]] = (c[this.tiles[i]] || 0) + 1;
+    return c;
+  },
+
+  /* 給 Grid 用（非 0 都算擋；也可以指定「哪個值算擋」） */
+  grid(opt) {
+    opt = opt || {};
+    const pass = opt.pass || null;       // 例：{ 2: true } → 2 當可走
+    const tiles = new Uint8Array(this.tiles.length);
+    for (let i = 0; i < this.tiles.length; i++) {
+      const t = this.tiles[i];
+      tiles[i] = (!t || (pass && pass[t])) ? 0 : 1;
+    }
+    const g = Grid.createFromTiles(tiles, this.cols, this.rows, { cell: this.cell });
+    if (opt.block) g.setBlock(opt.block);
+    return g;
+  },
+
+  /* ---------------- 物件 ---------------- */
+  addObject(type, cx, cy, data) {
+    const o = { type, cx, cy, data: data || null };
+    this.objects.push(o);
+    return o;
+  },
+  removeObjectAt(cx, cy, type) {
+    const i = this.objects.findIndex(o => o.cx === cx && o.cy === cy && (!type || o.type === type));
+    if (i < 0) return null;
+    return this.objects.splice(i, 1)[0];
+  },
+  objectAt(cx, cy, type) {
+    return this.objects.find(o => o.cx === cx && o.cy === cy && (!type || o.type === type)) || null;
+  },
+
+  /* ---------------- 驗證 ---------------- */
+  validate() {
+    const out = [];
+    if (!this.tiles || this.tiles.length !== this.cols * this.rows) {
+      out.push({ level: 'error', msg: 'tiles 數量不對（' + (this.tiles ? this.tiles.length : 0) + '）' });
+      return out;
+    }
+    if (this.cols < 2 || this.rows < 2) out.push({ level: 'error', msg: '地圖太小' });
+    for (const o of this.objects) {
+      if (!this.inside(o.cx, o.cy)) {
+        out.push({ level: 'error', msg: '物件 ' + o.type + ' 在地圖外 (' + o.cx + ',' + o.cy + ')' });
+      }
+    }
+    const counts = this.counts();
+    if ((counts[0] || 0) === 0) out.push({ level: 'warn', msg: '整張圖都是牆（沒有可走的地方）' });
+    return out;
+  },
+
+  /* 兩個格子之間走得通嗎（用 Grid 的 BFS 距離場） */
+  connected(a, b, opt) {
+    if (!a || !b) return false;
+    const g = this.grid(opt);
+    const field = g.field({ from: { cx: a.cx, cy: a.cy } });
+    return field[this.idx(b.cx, b.cy)] >= 0;
+  },
+
+  /* ---------------- localStorage ---------------- */
+  save(key) {
+    Save.set(key, this.export());
+    return this;
+  },
+  loadSaved(key) {
+    const d = Save.get(key, null);
+    if (!d) return null;
+    this.load(d);
+    return this;
+  },
+
+  /* ---------------- 建給測試/工具用 ---------------- */
+  toGridString(passValue) {
+    const rows = [];
+    for (let y = 0; y < this.rows; y++) {
+      let line = '';
+      for (let x = 0; x < this.cols; x++) {
+        const t = this.tiles[y * this.cols + x];
+        line += (!t || t === passValue) ? '.' : '#';
+      }
+      rows.push(line);
+    }
+    return rows.join('\n');
+  },
+};
+
+/* ---- engine/edit.js ---- */
+/* ============================================================
+   engine/edit.js — 格子關卡編輯器（畫格存 JSON）  v1.6
+   ------------------------------------------------------------
+   給「關卡資料是格子的遊戲」用的最小編輯器：滑鼠塗格子、選色盤、存檔。
+
+   用法（遊戲端）：
+     Edit.init({
+       level: Level,                     // 要編輯的 Level（會直接改它）
+       palette: [                        // 色盤：第一個是「橡皮擦/可走」
+         { v: 0, name: '地板', color: '#b8d94a' },
+         { v: 1, name: '牆',   color: '#5b6b8a' },
+       ],
+       cell: 16,                         // 幾 px 一格
+       origin: { x: 0, y: 16 },          // 地圖左上角在畫面上的位置
+       canvas: 'game',                   // 要吃哪個 canvas 的滑鼠
+       onChange: (lv) => {},             // 每次塗完（給遊戲重建 Grid 用）
+       onSave: (json) => {},             // 按 S 存檔時（預設存 localStorage + console）
+       key: 'tiny-level',                // localStorage key
+     });
+     Edit.toggle();           // 開 / 關
+     Edit.draw();             // 每帧最後呼叫（畫格線、色盤、提示）
+     Edit.update(dt);         // 可選（沒有動畫，留給之後）
+
+   操作：
+     左鍵塗 / 拖曳連續塗　　右鍵（或 Shift+左鍵）擦成 0
+     1~9 選色盤　　滾輪 / Q E 換色　　G 切格線
+     Ctrl+Z 復原　　S 存檔（localStorage + console）　　X 匯出 JSON 到 console
+     E 或 Esc 關閉編輯器（遊戲端自己決定要不要綁）
+   ============================================================ */
+
+const Edit = {
+  enabled: false,
+  level: null,
+  palette: [],
+  sel: 0,
+  cell: 16,
+  origin: { x: 0, y: 0 },
+  onChange: null,
+  onSave: null,
+  key: 'tiny-level',
+  gridLines: true,
+  undoStack: [],
+  painting: 0,          // 0 = 沒畫、1 = 塗、-1 = 擦
+  lastPaint: null,      // 上一個塗過的格子（避免同一格重複觸發）
+  hover: null,
+
+  init(opt) {
+    opt = opt || {};
+    this.level = opt.level || null;
+    this.palette = opt.palette || [{ v: 0, name: '地板', color: '#b8d94a' }];
+    this.sel = 0;
+    this.cell = opt.cell || 16;
+    this.origin = opt.origin || { x: 0, y: 0 };
+    this.onChange = opt.onChange || null;
+    this.onSave = opt.onSave || null;
+    this.key = opt.key || 'tiny-level';
+    this.gridLines = true;
+    this.undoStack = [];
+
+    const canvas = typeof opt.canvas === 'string'
+      ? document.getElementById(opt.canvas) : opt.canvas;
+    this.canvas = canvas || null;
+    if (canvas && !this._bound) this.bind(canvas);
+    return this;
+  },
+
+  bind(canvas) {
+    this._bound = true;
+    const toCell = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width * GAME_W - this.origin.x;
+      const y = (e.clientY - r.top) / r.height * GAME_H - this.origin.y;
+      return { cx: Math.floor(x / this.cell), cy: Math.floor(y / this.cell) };
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!this.enabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.hitPalette(e)) return;
+      this.pushUndo();
+      this.painting = (e.button === 2 || e.shiftKey) ? -1 : 1;
+      this.lastPaint = null;
+      this.paint(toCell(e));
+    }, true);
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.enabled) return;
+      const c = toCell(e);
+      this.hover = c;
+      if (this.painting) this.paint(c);
+    }, true);
+
+    const stop = () => { this.painting = 0; this.lastPaint = null; };
+    addEventListener('pointerup', stop);
+    addEventListener('pointercancel', stop);
+    canvas.addEventListener('contextmenu', (e) => { if (this.enabled) e.preventDefault(); });
+
+    addEventListener('keydown', (e) => {
+      if (!this.enabled) return;
+      if (e.ctrlKey && e.code === 'KeyZ') { this.undo(); e.preventDefault(); return; }
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= this.palette.length) { this.sel = n - 1; return; }
+      if (e.code === 'KeyG') { this.gridLines = !this.gridLines; return; }
+      if (e.code === 'KeyS') { this.save(); return; }
+      if (e.code === 'KeyX') { this.exportJSON(); return; }
+      if (e.code === 'KeyQ') { this.sel = (this.sel + this.palette.length - 1) % this.palette.length; return; }
+      if (e.code === 'KeyE') { this.sel = (this.sel + 1) % this.palette.length; return; }
+    });
+  },
+
+  toggle() {
+    this.enabled = !this.enabled;
+    return this.enabled;
+  },
+
+  /* ---------------- 色盤 ---------------- */
+  paletteRect(i) {
+    const w = 56, h = 14, gap = 2;
+    return { x: 4 + i * (w + gap), y: GAME_H - h - 3, w, h };
+  },
+
+  hitPalette(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width * GAME_W;
+    const y = (e.clientY - r.top) / r.height * GAME_H;
+    for (let i = 0; i < this.palette.length; i++) {
+      const b = this.paletteRect(i);
+      if (x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h) {
+        this.sel = i;
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /* ---------------- 畫格子 ---------------- */
+  pushUndo() {
+    if (!this.level) return;
+    this.undoStack.push(Uint8Array.from(this.level.tiles));
+    if (this.undoStack.length > 60) this.undoStack.shift();
+  },
+
+  undo() {
+    if (!this.undoStack.length || !this.level) return false;
+    this.level.tiles = this.undoStack.pop();
+    this.changed();
+    return true;
+  },
+
+  paint(c) {
+    if (!this.level || !this.level.inside(c.cx, c.cy)) return false;
+    if (this.lastPaint && this.lastPaint.cx === c.cx && this.lastPaint.cy === c.cy) return false;
+    this.lastPaint = c;
+    const v = this.painting < 0 ? 0 : (this.palette[this.sel] || this.palette[0]).v;
+    if (this.level.get(c.cx, c.cy) === v) return false;
+    this.level.set(c.cx, c.cy, v);
+    this.changed();
+    return true;
+  },
+
+  changed() {
+    if (this.onChange) this.onChange(this.level);
+  },
+
+  /* ---------------- 存檔 / 匯出 ---------------- */
+  save() {
+    if (!this.level) return null;
+    const data = this.level.export();
+    Save.set(this.key, data);
+    if (this.onSave) this.onSave(data);
+    else {
+      console.log('[edit] 已存到 localStorage["' + this.key + '"]');
+    }
+    if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('關卡已儲存（localStorage）');
+    return data;
+  },
+
+  exportJSON() {
+    if (!this.level) return '';
+    const json = this.level.serialize(true);
+    console.log('[edit] 關卡 JSON：\\n' + json);
+    if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('JSON 已印到 console');
+    this.lastJSON = json;
+    return json;
+  },
+
+  /* 下載成檔案（瀏覽器；測試不需要） */
+  download(filename) {
+    const json = this.exportJSON();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    a.download = filename || 'level.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  },
+
+  /* ---------------- 繪製 ---------------- */
+  draw() {
+    if (!this.enabled || !this.level) return;
+    const ctx = G.ctx;
+    const T = this.cell, ox = this.origin.x, oy = this.origin.y;
+
+    /* 格子線 */
+    if (this.gridLines) {
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= this.level.cols; x++) {
+        ctx.moveTo(ox + x * T + 0.5, oy);
+        ctx.lineTo(ox + x * T + 0.5, oy + this.level.rows * T);
+      }
+      for (let y = 0; y <= this.level.rows; y++) {
+        ctx.moveTo(ox, oy + y * T + 0.5);
+        ctx.lineTo(ox + this.level.cols * T, oy + y * T + 0.5);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    /* 游標 */
+    if (this.hover && this.level.inside(this.hover.cx, this.hover.cy)) {
+      const p = this.palette[this.sel];
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = p ? p.color : '#fff';
+      ctx.fillRect(ox + this.hover.cx * T + 1, oy + this.hover.cy * T + 1, T - 2, T - 2);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ox + this.hover.cx * T + 0.5, oy + this.hover.cy * T + 0.5, T - 1, T - 1);
+    }
+
+    /* 色盤 */
+    for (let i = 0; i < this.palette.length; i++) {
+      const p = this.palette[i];
+      const b = this.paletteRect(i);
+      roundRect(b.x, b.y, b.w, b.h, 3, 'rgba(12,18,14,0.9)', i === this.sel ? '#ffd45e' : '#5d7a52');
+      ctx.fillStyle = p.color;
+      ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
+      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5.5, color: '#f6ffe6', shadow: false });
+    }
+
+    /* 提示 */
+    const hint = '編輯模式：左鍵塗 / 右鍵擦　1~9 換色　Ctrl+Z 復原　S 存檔　X 匯出 JSON　G 格線';
+    ctx.globalAlpha = 0.8;
+    roundRect(4, 2, Math.min(GAME_W - 8, UI.measure(hint, 5.5) + 10), 11, 3, 'rgba(8,14,10,0.85)');
+    ctx.globalAlpha = 1;
+    text(hint, 9, 4, { size: 5.5, color: '#d6f5a8', shadow: false });
+  },
+};
+
 /* ---- engine/save.js ---- */
 /* ============================================================
    engine/save.js — 存檔與排行榜（localStorage）
@@ -2568,3 +3083,92 @@ const Net = {
     }
   },
 };
+
+/* ---- engine/namespace.js ---- */
+/* ============================================================
+   engine/namespace.js — 命名空間與「撞名」防護  v1.6
+   ------------------------------------------------------------
+   問題：引擎有一堆全域（G / Display / Camera / Grid / SHEETS …）。
+   遊戲也宣告 `const SHEETS = {}` 時，整個檔案直接 SyntaxError
+   （tiny-keep 就撞過一次）。
+
+   這一支做三件事：
+     1) 把引擎的東西掛到 `TE.` 底下（新專案請用 TE.xxx，避免再撞）
+     2) `TE.reserved` 列出所有保留名稱，遊戲端可以自我檢查
+     3) `TE.checkGlobals(obj)` 給遊戲在 dev 模式檢查自己的全域有沒有撞名
+        （另附 tools/globals.py：不用跑就先用掃的，CI 可用）
+
+   注意：舊寫法（直接用 `Grid.xxx`）完全不受影響，這一支只是「多一個入口」。
+   ============================================================ */
+
+const TE = {
+  version: typeof TINY_ENGINE_VERSION !== 'undefined' ? TINY_ENGINE_VERSION : '?',
+  reserved: [
+    /* 核心 */
+    'G', 'GAME_W', 'GAME_H', 'SCALE', 'Display', 'Camera', 'Loop', 'Input',
+    /* 資源與繪製 */
+    'ASSETS', 'SHEETS', 'WHITES', 'assetDef', 'sheetOf', 'loadAll', 'collectSheets',
+    'drawSheet', 'drawDirSheet', 'drawCrop', 'drawSprite', 'frameOf', 'drawFrames',
+    'shadow', 'Sprite', 'DIR_ROW', 'DIR_NAMES',
+    /* 系統 */
+    'Sfx', 'Fx', 'Physics', 'Pathfind', 'Grid', 'Level', 'Edit', 'Save', 'Scene', 'Net',
+    /* UI / 觸控 */
+    'UI', 'text', 'hudPanel', 'panel', 'roundRect', 'inRect', 'TouchUI', 'Screen', 'buzz',
+    /* 工具 */
+    'U', 'DIRV',
+    /* 常數 */
+    'TINY_ENGINE_VERSION',
+  ],
+
+  /* 常用的東西安裝到 TE 底下（沒載入的模組就不會出現）
+     注意：引擎的模組是 `const`（在全域詞法環境），不會變成 window 的屬性，
+     所以這裡要一個一個明確取用（箭頭函式是為了延後到呼叫時才讀，避免 TDZ）。 */
+  install() {
+    const refs = {
+      G: () => G, Display: () => Display, Camera: () => Camera, Loop: () => Loop,
+      Input: () => Input, Sfx: () => Sfx, Fx: () => Fx, Physics: () => Physics,
+      Pathfind: () => Pathfind, Grid: () => Grid, Level: () => Level, Edit: () => Edit,
+      Save: () => Save, Scene: () => Scene, Net: () => Net, Sprite: () => Sprite,
+      UI: () => UI, TouchUI: () => TouchUI, Screen: () => Screen,
+      U: () => U, DIRV: () => DIRV, ASSETS: () => ASSETS, SHEETS: () => SHEETS,
+      text: () => text, roundRect: () => roundRect, panel: () => panel, inRect: () => inRect,
+      loadAll: () => loadAll, sheetOf: () => sheetOf, assetDef: () => assetDef,
+      drawSheet: () => drawSheet, drawDirSheet: () => drawDirSheet, drawCrop: () => drawCrop,
+      drawSprite: () => drawSprite, frameOf: () => frameOf, drawFrames: () => drawFrames,
+      shadow: () => shadow, buzz: () => buzz,
+    };
+    for (const k in refs) {
+      try {
+        const v = refs[k]();
+        if (v !== undefined) this[k] = v;
+      } catch (e) { /* 這個模組沒載入 */ }
+    }
+    return this;
+  },
+
+  /* 這個名字是引擎保留的嗎 */
+  isReserved(name) { return this.reserved.indexOf(name) >= 0; },
+
+  /* dev 檢查：傳進「遊戲自己的全域表」，回傳撞到的名字
+     用法：const bad = TE.checkGlobals({ SHEETS, SRC, Game, Battle });
+     （不傳的話就看 window 上有沒有重複宣告——但那通常已經 SyntaxError 了，
+       所以建議把遊戲的全域名稱手動列進去，或直接用 tools/globals.py） */
+  checkGlobals(map) {
+    const hits = [];
+    if (map) {
+      for (const k in map) if (this.isReserved(k)) hits.push(k);
+    }
+    return hits;
+  },
+
+  /* 給新專案用：TE.ns('MyGame', api => { api.foo = ... })
+     回傳一個乾淨的物件（內部用什麼名字都不會污染全域） */
+  ns(name, fn) {
+    const bag = {};
+    if (fn) fn(bag);
+    this[name] = bag;
+    return bag;
+  },
+};
+
+TE.install();

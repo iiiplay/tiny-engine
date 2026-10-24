@@ -17,8 +17,8 @@ ENGINE = os.path.join(ROOT, 'engine')
 # 載入順序（和 README / index.html 一致）
 ORDER = [
     'util.js', 'core.js', 'assets.js', 'sprite.js', 'input.js', 'audio.js',
-    'fx.js', 'physics.js', 'pathfind.js', 'grid.js', 'save.js', 'scene.js', 'ui.js',
-    'touch.js', 'net.js',
+    'fx.js', 'physics.js', 'pathfind.js', 'grid.js', 'level.js', 'edit.js',
+    'save.js', 'scene.js', 'ui.js', 'touch.js', 'net.js', 'namespace.js',
 ]
 
 BANNER = """/*! tiny-engine — 單檔版（由 tools/pack.py 產生，請勿手改）

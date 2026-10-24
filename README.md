@@ -24,6 +24,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 - **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
 - **v1.4 驗收頁**：`demo/v14.html`（`drawSprite` 的翻轉 ⇄ / 顛倒 ⇅ / 旋轉 ⟳ + 軸心 pivot）
 - **v1.5 驗收頁**：`demo/v15.html`（格子碰撞 / BFS 距離場 / 逐格動畫 / Camera.push）
+- **v1.6 驗收頁**：`demo/v16.html`（JSON 關卡 / 畫格編輯器 / `TE` 命名空間）
 - **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
 
 ---
@@ -109,13 +110,16 @@ window.addEventListener('load', async () => {
 | `fx.js` | `Fx.burst/dust/spark/shake/hitstop/update/draw` |
 | `physics.js` | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds` |
 | `grid.js` | **`Grid.setup/create`**、`solid/setBlock/moveX/moveY/alignTo`、**`field`**（BFS 距離場）、`downhill/route`、`freeCells` |
+| `level.js` | **`Level.create/from/load/save`**、`get/set/fillRect/fillBorder`、`grid()`、`connected()`、`addObject/objectAt`、`validate()`、`exportRows()` |
+| `edit.js` | **`Edit.init({level, palette, cell, origin, onChange})`**、`toggle()`、`draw()`、`save()`、`exportJSON()`、`undo()` |
+| `namespace.js` | **`TE`**（`TE.Grid` / `TE.Level` …）、`TE.reserved`、`TE.isReserved()`、`TE.checkGlobals()`、`TE.ns()` |
 | `pathfind.js` | `Pathfind.build({ cell, w, h, pad })`、`.find(x1,y1,x2,y2)`、`.lineClear()` |
 | `save.js` | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |
 | `ui.js` | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
 | `touch.js` | `TouchUI.showIn / setButtons / extra`、`init/update/draw/resize`、`Screen`、`buzz()` |
 | `net.js` | `Net.connect/close/send/update`、`Net.remote`、`produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
 
-### 六個最常用的細節
+### 七個最常用的細節
 
 ```js
 // 1) 鏡頭（捲動世界）
@@ -140,7 +144,16 @@ Grid.moveX(enemy, d.x * spd); Grid.moveY(enemy, d.y * spd);
 // 5) 逐格動畫（一格一張 PNG）
 drawFrames(SRC.bomb, t, 10, x, y, { anchor: 'center' });
 
-// 6) 翻轉 / 旋轉（v1.4；素材只有單一朝向時很好用）
+// 6) 關卡變成資料（v1.6）+ 內建編輯器
+const lv = Level.create({ cols: 20, rows: 12, cell: 16 }).fillBorder(1);
+if (location.search.includes('edit=1')) {
+  Edit.init({ level: lv, cell: 16, origin: { x: 0, y: 16 },
+    palette: [{ v: 0, name: '地板', color: '#b8d94a' }, { v: 1, name: '牆', color: '#5b6b8a' }] });
+  Edit.toggle();
+}
+// 每帧最後：Edit.draw()；遊戲的點擊前面加 if (Edit.enabled) return;
+
+// 7) 翻轉 / 旋轉（v1.4；素材只有單一朝向時很好用）
 drawSheet(hero, f, x, y, { flipX: true });                        // 左右鏡像
 drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: Math.PI / 2 });  // 轉 90°
 drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: t, pivot: { x: px, y: py } });  // 繞指定軸心
@@ -148,6 +161,7 @@ drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: t, pivot: { x: px, y: py 
 
 → 完整參數、軸心語意、像素注意事項：**[`docs/api-sprite.md`](docs/api-sprite.md)**
 → 格子碰撞與 BFS 距離場：**[`docs/api-grid.md`](docs/api-grid.md)**
+→ 關卡 JSON、編輯器、素材表工具、撞名檢查：**[`docs/api-level.md`](docs/api-level.md)**
 
 ---
 
@@ -276,6 +290,7 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 
 - [`STATUS.md`](STATUS.md) — 目前版本、已完成/待辦、效能數據、常用指令（**接手先看這個**）
 - [`CHANGELOG.md`](CHANGELOG.md) — 每個版本做了什麼
+- [`docs/api-level.md`](docs/api-level.md) — JSON 關卡 / 編輯器 / `gen_manifest` / `globals` / `TE`
 - [`docs/api-grid.md`](docs/api-grid.md) — 格子世界 API（碰撞 / BFS 距離場 / 下坡走位）
 - [`docs/api-sprite.md`](docs/api-sprite.md) — 圖形變形與逐格動畫 API
 

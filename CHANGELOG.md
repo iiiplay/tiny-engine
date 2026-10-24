@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.6.0 — 2026-10-24
+
+> 主題：**關卡變成資料**。三款遊戲的關卡都寫在 JS 裡（`ROADS`／`LEVELS`），
+> 改一格要動程式、也不能給非工程師編。v1.6 把地圖抽成 JSON，加上編輯器與兩個工具。
+
+### 新增 `engine/level.js`（JSON 關卡）
+- `Level.create() / from() / load() / loadSaved()`（`create`/`from` 回傳獨立物件）
+- 格式：機器用 `tiles`（扁平陣列）、手寫用 `lines` + `legend`（字元→值，可自動配）
+- `validate()`：長度不對、列太短、物件在地圖外都會丟**看得懂的錯誤**
+- `grid()` 轉 `Grid`（可指定哪些 tile 當可走）、`connected()` 用 BFS 判斷兩格通不通
+- 物件：`addObject / objectAt / removeObjectAt`；存檔：`save / loadSaved`、`serialize`、`exportRows`
+
+### 新增 `engine/edit.js`（畫格編輯器）
+- 左鍵塗 / 拖曳連塗、右鍵或 Shift 擦、`1~9` 換色、`Ctrl+Z` 復原、`G` 格線、`S` 存檔、`X` 匯出 JSON
+- `onChange`（重建碰撞）、`onSave`（自訂存檔）、`download()`（存成檔案）
+- 內建色盤與提示列；關掉時完全不干擾遊戲（遊戲端只要 `if (Edit.enabled) return;`）
+
+### 新增 `engine/namespace.js`（`TE`）
+- `TE.Grid` / `TE.Level` / `TE.Edit` …（沒載入的模組不會出現）
+- `TE.reserved`（50 個引擎保留名稱）、`TE.isReserved()`、`TE.checkGlobals()`、`TE.ns()`
+  · 原因：遊戲宣告 `const SHEETS` 會直接 SyntaxError（tiny-keep 撞過）
+
+### 新增 `tools/gen_manifest.py`（素材表自動產生）
+- 掃資料夾 → `SRC` / `ANIM`（`Foo_f0..` 合成逐格動畫）/ `SHEET_DEF`（自動算 frames、fh、foot）/ `MANIFEST`
+- 不用再手量切圖尺寸（之前的坑：切錯 → 動畫變一整條）
+
+### 新增 `tools/globals.py`（撞名檢查，CI 可用）
+- 掃 `engine/*.js` 的宣告 vs 遊戲的全域 → 撞名 exit 1，另列「全大寫命名」警告
+
+### 文件
+- 新檔 [`docs/api-level.md`](docs/api-level.md)：兩種 JSON 格式、錯誤訊息、編輯器接法、
+  兩個工具、`TE` 用法、驗收方式
+
+### 驗收
+- `demo/v16.html` + `tools/v16.py`：**30 項**
+  · Python：`gen_manifest` 產出（動畫合併／frames=6／`node --check`）、`globals.py --check`
+  · 瀏覽器：Level 建立／JSON 往返／手寫格式／錯誤訊息／`connected()`／物件／存檔
+  · 瀏覽器：Edit 的**真滑鼠**塗格／換色／右鍵擦／拖曳連塗／`Ctrl+Z`／`S` 存檔
+- `pack.py` 納入 3 支新模組（18 支 → dist 111KB）
+
 ## v1.5.1 — 2026-10-24
 
 > tiny-keep（塔防）實作時抓到的快取 bug。

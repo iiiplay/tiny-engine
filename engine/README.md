@@ -19,6 +19,9 @@
 | `audio.js` | WebAudio 合成音效 + 音檔 | `Sfx.tone/noise`、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | 粒子 / 震動 / hitstop | `Fx.burst/dust/spark/shake/hitstop/update/draw/reset` |
 | `physics.js` | AABB 碰撞 | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds`（活動邊界，捲動世界必設） |
+| `level.js` | **JSON 關卡** | `Level.create/from/load/loadSaved`、`get/set/fillRect/fillBorder`、`grid()`、`connected()`、`validate()`、`addObject/objectAt/removeObjectAt`、`export/serialize/exportRows` |
+| `edit.js` | **畫格編輯器** | `Edit.init({level, palette, cell, origin, onChange, onSave})`、`toggle()`、`draw()`、`save()`、`exportJSON()`、`undo()`、`download()` |
+| `namespace.js` | **命名空間** | `TE`（`TE.Grid`/`TE.Level`…）、`TE.reserved`、`TE.checkGlobals()`、`TE.ns()` |
 | `grid.js` | **格子世界**（tile 碰撞 + BFS） | `Grid.setup/create/createFromTiles`、`solid/setTile/setBlock`、`moveX/moveY/alignTo`、`field({from,cells,block,diagonal})`、`downhill/route`、`freeCells/forEach` |
 | `pathfind.js` | 格子 A* | `Pathfind.build({cell,w,h,pad})`、`.find(x1,y1,x2,y2)`、`.lineClear()`、`.smooth()` |
 | `save.js` | 存檔 / 排行榜 | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |

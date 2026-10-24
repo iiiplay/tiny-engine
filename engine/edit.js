@@ -1,0 +1,252 @@
+'use strict';
+/* ============================================================
+   engine/edit.js — 格子關卡編輯器（畫格存 JSON）  v1.6
+   ------------------------------------------------------------
+   給「關卡資料是格子的遊戲」用的最小編輯器：滑鼠塗格子、選色盤、存檔。
+
+   用法（遊戲端）：
+     Edit.init({
+       level: Level,                     // 要編輯的 Level（會直接改它）
+       palette: [                        // 色盤：第一個是「橡皮擦/可走」
+         { v: 0, name: '地板', color: '#b8d94a' },
+         { v: 1, name: '牆',   color: '#5b6b8a' },
+       ],
+       cell: 16,                         // 幾 px 一格
+       origin: { x: 0, y: 16 },          // 地圖左上角在畫面上的位置
+       canvas: 'game',                   // 要吃哪個 canvas 的滑鼠
+       onChange: (lv) => {},             // 每次塗完（給遊戲重建 Grid 用）
+       onSave: (json) => {},             // 按 S 存檔時（預設存 localStorage + console）
+       key: 'tiny-level',                // localStorage key
+     });
+     Edit.toggle();           // 開 / 關
+     Edit.draw();             // 每帧最後呼叫（畫格線、色盤、提示）
+     Edit.update(dt);         // 可選（沒有動畫，留給之後）
+
+   操作：
+     左鍵塗 / 拖曳連續塗　　右鍵（或 Shift+左鍵）擦成 0
+     1~9 選色盤　　滾輪 / Q E 換色　　G 切格線
+     Ctrl+Z 復原　　S 存檔（localStorage + console）　　X 匯出 JSON 到 console
+     E 或 Esc 關閉編輯器（遊戲端自己決定要不要綁）
+   ============================================================ */
+
+const Edit = {
+  enabled: false,
+  level: null,
+  palette: [],
+  sel: 0,
+  cell: 16,
+  origin: { x: 0, y: 0 },
+  onChange: null,
+  onSave: null,
+  key: 'tiny-level',
+  gridLines: true,
+  undoStack: [],
+  painting: 0,          // 0 = 沒畫、1 = 塗、-1 = 擦
+  lastPaint: null,      // 上一個塗過的格子（避免同一格重複觸發）
+  hover: null,
+
+  init(opt) {
+    opt = opt || {};
+    this.level = opt.level || null;
+    this.palette = opt.palette || [{ v: 0, name: '地板', color: '#b8d94a' }];
+    this.sel = 0;
+    this.cell = opt.cell || 16;
+    this.origin = opt.origin || { x: 0, y: 0 };
+    this.onChange = opt.onChange || null;
+    this.onSave = opt.onSave || null;
+    this.key = opt.key || 'tiny-level';
+    this.gridLines = true;
+    this.undoStack = [];
+
+    const canvas = typeof opt.canvas === 'string'
+      ? document.getElementById(opt.canvas) : opt.canvas;
+    this.canvas = canvas || null;
+    if (canvas && !this._bound) this.bind(canvas);
+    return this;
+  },
+
+  bind(canvas) {
+    this._bound = true;
+    const toCell = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width * GAME_W - this.origin.x;
+      const y = (e.clientY - r.top) / r.height * GAME_H - this.origin.y;
+      return { cx: Math.floor(x / this.cell), cy: Math.floor(y / this.cell) };
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!this.enabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.hitPalette(e)) return;
+      this.pushUndo();
+      this.painting = (e.button === 2 || e.shiftKey) ? -1 : 1;
+      this.lastPaint = null;
+      this.paint(toCell(e));
+    }, true);
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.enabled) return;
+      const c = toCell(e);
+      this.hover = c;
+      if (this.painting) this.paint(c);
+    }, true);
+
+    const stop = () => { this.painting = 0; this.lastPaint = null; };
+    addEventListener('pointerup', stop);
+    addEventListener('pointercancel', stop);
+    canvas.addEventListener('contextmenu', (e) => { if (this.enabled) e.preventDefault(); });
+
+    addEventListener('keydown', (e) => {
+      if (!this.enabled) return;
+      if (e.ctrlKey && e.code === 'KeyZ') { this.undo(); e.preventDefault(); return; }
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= this.palette.length) { this.sel = n - 1; return; }
+      if (e.code === 'KeyG') { this.gridLines = !this.gridLines; return; }
+      if (e.code === 'KeyS') { this.save(); return; }
+      if (e.code === 'KeyX') { this.exportJSON(); return; }
+      if (e.code === 'KeyQ') { this.sel = (this.sel + this.palette.length - 1) % this.palette.length; return; }
+      if (e.code === 'KeyE') { this.sel = (this.sel + 1) % this.palette.length; return; }
+    });
+  },
+
+  toggle() {
+    this.enabled = !this.enabled;
+    return this.enabled;
+  },
+
+  /* ---------------- 色盤 ---------------- */
+  paletteRect(i) {
+    const w = 56, h = 14, gap = 2;
+    return { x: 4 + i * (w + gap), y: GAME_H - h - 3, w, h };
+  },
+
+  hitPalette(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width * GAME_W;
+    const y = (e.clientY - r.top) / r.height * GAME_H;
+    for (let i = 0; i < this.palette.length; i++) {
+      const b = this.paletteRect(i);
+      if (x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h) {
+        this.sel = i;
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /* ---------------- 畫格子 ---------------- */
+  pushUndo() {
+    if (!this.level) return;
+    this.undoStack.push(Uint8Array.from(this.level.tiles));
+    if (this.undoStack.length > 60) this.undoStack.shift();
+  },
+
+  undo() {
+    if (!this.undoStack.length || !this.level) return false;
+    this.level.tiles = this.undoStack.pop();
+    this.changed();
+    return true;
+  },
+
+  paint(c) {
+    if (!this.level || !this.level.inside(c.cx, c.cy)) return false;
+    if (this.lastPaint && this.lastPaint.cx === c.cx && this.lastPaint.cy === c.cy) return false;
+    this.lastPaint = c;
+    const v = this.painting < 0 ? 0 : (this.palette[this.sel] || this.palette[0]).v;
+    if (this.level.get(c.cx, c.cy) === v) return false;
+    this.level.set(c.cx, c.cy, v);
+    this.changed();
+    return true;
+  },
+
+  changed() {
+    if (this.onChange) this.onChange(this.level);
+  },
+
+  /* ---------------- 存檔 / 匯出 ---------------- */
+  save() {
+    if (!this.level) return null;
+    const data = this.level.export();
+    Save.set(this.key, data);
+    if (this.onSave) this.onSave(data);
+    else {
+      console.log('[edit] 已存到 localStorage["' + this.key + '"]');
+    }
+    if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('關卡已儲存（localStorage）');
+    return data;
+  },
+
+  exportJSON() {
+    if (!this.level) return '';
+    const json = this.level.serialize(true);
+    console.log('[edit] 關卡 JSON：\\n' + json);
+    if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('JSON 已印到 console');
+    this.lastJSON = json;
+    return json;
+  },
+
+  /* 下載成檔案（瀏覽器；測試不需要） */
+  download(filename) {
+    const json = this.exportJSON();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    a.download = filename || 'level.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  },
+
+  /* ---------------- 繪製 ---------------- */
+  draw() {
+    if (!this.enabled || !this.level) return;
+    const ctx = G.ctx;
+    const T = this.cell, ox = this.origin.x, oy = this.origin.y;
+
+    /* 格子線 */
+    if (this.gridLines) {
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= this.level.cols; x++) {
+        ctx.moveTo(ox + x * T + 0.5, oy);
+        ctx.lineTo(ox + x * T + 0.5, oy + this.level.rows * T);
+      }
+      for (let y = 0; y <= this.level.rows; y++) {
+        ctx.moveTo(ox, oy + y * T + 0.5);
+        ctx.lineTo(ox + this.level.cols * T, oy + y * T + 0.5);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    /* 游標 */
+    if (this.hover && this.level.inside(this.hover.cx, this.hover.cy)) {
+      const p = this.palette[this.sel];
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = p ? p.color : '#fff';
+      ctx.fillRect(ox + this.hover.cx * T + 1, oy + this.hover.cy * T + 1, T - 2, T - 2);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ox + this.hover.cx * T + 0.5, oy + this.hover.cy * T + 0.5, T - 1, T - 1);
+    }
+
+    /* 色盤 */
+    for (let i = 0; i < this.palette.length; i++) {
+      const p = this.palette[i];
+      const b = this.paletteRect(i);
+      roundRect(b.x, b.y, b.w, b.h, 3, 'rgba(12,18,14,0.9)', i === this.sel ? '#ffd45e' : '#5d7a52');
+      ctx.fillStyle = p.color;
+      ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
+      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5.5, color: '#f6ffe6', shadow: false });
+    }
+
+    /* 提示 */
+    const hint = '編輯模式：左鍵塗 / 右鍵擦　1~9 換色　Ctrl+Z 復原　S 存檔　X 匯出 JSON　G 格線';
+    ctx.globalAlpha = 0.8;
+    roundRect(4, 2, Math.min(GAME_W - 8, UI.measure(hint, 5.5) + 10), 11, 3, 'rgba(8,14,10,0.85)');
+    ctx.globalAlpha = 1;
+    text(hint, 9, 4, { size: 5.5, color: '#d6f5a8', shadow: false });
+  },
+};

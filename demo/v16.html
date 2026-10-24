@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyEngine v1.6 — JSON 關卡 / 編輯器 / 命名空間 驗收</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0f18; overflow: hidden;
+    font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; user-select: none; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; image-rendering: pixelated; border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6); background: #121a26; }
+  #hint { position: fixed; left: 14px; bottom: 12px; color: #64718a; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="hint">v1.6 驗收頁：Level（JSON 關卡）／Edit（畫格編輯器）／TE 命名空間</div>
+
+<script src="../engine/util.js?v=1.6"></script>
+<script src="../engine/core.js?v=1.6"></script>
+<script src="../engine/assets.js?v=1.6"></script>
+<script src="../engine/sprite.js?v=1.6"></script>
+<script src="../engine/input.js?v=1.6"></script>
+<script src="../engine/fx.js?v=1.6"></script>
+<script src="../engine/grid.js?v=1.6"></script>
+<script src="../engine/level.js?v=1.6"></script>
+<script src="../engine/edit.js?v=1.6"></script>
+<script src="../engine/save.js?v=1.6"></script>
+<script src="../engine/ui.js?v=1.6"></script>
+<script src="../engine/namespace.js?v=1.6"></script>
+<script>
+GAME_W = 200;
+const CASES = [];
+function check(name, got, want) {
+  const norm = (v) => Array.isArray(v) ? v.join(',') : v;
+  const ok = (want === undefined) ? !!got : (norm(got) === norm(want));
+  CASES.push({ name, ok, detail: ok ? String(got) : ('得到 ' + String(got) + '，預期 ' + String(want)) });
+}
+function checkTrue(name, got, detail) {
+  CASES.push({ name, ok: !!got, detail: detail == null ? '' : String(detail) });
+}
+
+/* ============================================================
+   1) Level（JSON 關卡）
+   ============================================================ */
+let LV = null;
+function testLevel() {
+  const lv = Level.create({ cols: 8, rows: 6, cell: 16 });
+  lv.fillBorder(1);
+  lv.fillRect(3, 2, 4, 3, 2);
+  check('create + 邊框', [lv.cols, lv.rows, lv.get(0, 0), lv.get(3, 2)], [8, 6, 1, 2]);
+  const c = lv.counts();
+  // 8×6 = 48 格；邊框 24、中央 2×2 的 2 → 剩 20 個 0
+  check('counts', [c[0], c[1], c[2]], [20, 24, 4]);
+
+  /* 機器格式 roundtrip */
+  const json = lv.serialize();
+  const lv2 = Level.create({ cols: 2, rows: 2 });
+  lv2.load(json);
+  check('JSON roundtrip（tiles 一樣）',
+    Array.from(lv2.tiles).join('') === Array.from(lv.tiles).join(''), true);
+
+  /* 手寫格式（字串列 + legend） */
+  const lv3 = Level.create({ cols: 2, rows: 2 });
+  lv3.load({ v: 1, cols: 5, legend: { '.': 0, '#': 1, '~': 2 },
+             lines: ['..#..', '.~~~.', '..#..'] });
+  check('字串列格式 + legend', [lv3.cols, lv3.rows, lv3.get(2, 0), lv3.get(1, 1)], [5, 3, 1, 2]);
+
+  /* 手寫格式（自動 legend） */
+  const lv4 = Level.create({ cols: 2, rows: 2 });
+  lv4.load({ v: 1, cols: 3, lines: ['.ab', 'a.b'] });
+  check('自動 legend（第 1 個新字元 = 1）', [lv4.get(1, 0), lv4.get(2, 0), lv4.get(0, 1)], [1, 2, 1]);
+
+  /* 壞資料要丟出清楚的錯 */
+  let err = '';
+  try { lv4.load({ v: 1, cols: 4, rows: 2, tiles: [0, 1] }); } catch (e) { err = e.message; }
+  checkTrue('tiles 長度不對會報錯', err.indexOf('tiles 長度') >= 0, err);
+  let err2 = '';
+  try { lv4.load({ v: 1, cols: 3, lines: ['...', '..'] }); } catch (e) { err2 = e.message; }
+  checkTrue('字串列太短會報錯', err2.indexOf('只有') >= 0, err2);
+
+  /* Grid 轉換 + 連通性 */
+  const maze = Level.create({ cols: 5, rows: 3 });
+  maze.fillBorder(1);
+  maze.set(2, 1, 0);
+  const g = maze.grid();
+  check('grid() 把非 0 當牆', [g.solid(0, 1), g.solid(2, 1)], [true, false]);
+  check('connected：同一邊走得通', maze.connected({ cx: 1, cy: 1 }, { cx: 3, cy: 1 }, { pass: { 1: true } }), true);
+
+  const wall = Level.create({ cols: 5, rows: 3 });
+  wall.fillBorder(1);
+  wall.fillRect(2, 0, 2, 2, 1);          // 一道完整的牆
+  check('connected：被牆切開 = 不通', wall.connected({ cx: 1, cy: 1 }, { cx: 3, cy: 1 }), false);
+
+  /* exportRows → load 往返 */
+  const pretty = lv.exportRows({ 0: '.', 1: '#', 2: 'x' });
+  const rowsBack = Level.create({ cols: 2, rows: 2 });
+  rowsBack.load({ v: 1, cols: pretty.cols, legend: pretty.legend, lines: pretty.lines });
+  check('exportRows → load 往返一致',
+    Array.from(rowsBack.tiles).join('') === Array.from(lv.tiles).join(''), true);
+
+  /* 物件 */
+  lv.addObject('spawn', 2, 1, { team: 'red' });
+  lv.addObject('tower', 5, 4);
+  check('物件：加兩個', lv.objects.length, 2);
+  check('物件：查詢', (lv.objectAt(2, 1, 'spawn') || {}).cx, 2);
+  lv.removeObjectAt(2, 1, 'spawn');
+  check('物件：刪除後剩一個', lv.objects.length, 1);
+
+  /* localStorage */
+  lv.save('v16-level');
+  const lv5 = Level.create({ cols: 2, rows: 2 }).loadSaved('v16-level');
+  check('Level.save / loadSaved', !!lv5 && Array.from(lv5.tiles).join('') === Array.from(lv.tiles).join(''), true);
+  check('create() 是獨立物件（不是同一個 Level）', lv !== lv5, true);
+  check('Level 單例沒被動到', Level.cols, 0);
+
+  return lv;
+}
+
+/* ============================================================
+   2) Edit（編輯器）
+   ============================================================ */
+let EDIT_LV = null;
+function testEditInit() {
+  EDIT_LV = Level.create({ cols: 10, rows: 8, cell: 16 });
+  EDIT_LV.fillBorder(1);
+  Edit.init({
+    level: EDIT_LV,
+    cell: 16,
+    origin: { x: 8, y: 24 },
+    palette: [
+      { v: 0, name: '地板', color: '#b8d94a' },
+      { v: 1, name: '牆', color: '#5b6b8a' },
+      { v: 2, name: '水', color: '#4fa4b8' },
+    ],
+    key: 'v16-edit',
+    canvas: 'game',
+  });
+  check('Edit.init 綁好 level', Edit.level === EDIT_LV, true);
+  check('Edit 預設關閉', Edit.enabled, false);
+  Edit.sel = 1;              // 預設選「牆」，塗了才看得出變化
+  Edit.toggle();
+  check('toggle 之後開啟', Edit.enabled, true);
+  Edit.gridLines = true;
+}
+
+/* ============================================================
+   3) TE（命名空間）
+   ============================================================ */
+function testNamespace() {
+  check('TE 有版本號', TE.version, TINY_ENGINE_VERSION);
+  check('TE 掛上 Grid', TE.Grid === Grid, true);
+  check('TE 掛上 Level / Edit', TE.Level === Level && TE.Edit === Edit, true);
+  check('TE 認得保留名稱 SHEETS', TE.isReserved('SHEETS'), true);
+  check('撞名檢查抓到 SHEETS', TE.checkGlobals({ SHEETS: {}, foo: 1 }).join(','), 'SHEETS');
+  check('沒撞名回空陣列', TE.checkGlobals({ Foo: 1, Bar: 2 }).length, 0);
+  check('reserved 清單夠長', TE.reserved.length > 40, true);
+}
+
+/* ============================================================
+   畫面
+   ============================================================ */
+function draw() {
+  const ctx = G.ctx;
+  ctx.setTransform(G.scale, 0, 0, G.scale, 0, 0);
+  ctx.fillStyle = '#121a26';
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+  text('Level（JSON 關卡）+ Edit（畫格編輯器）', 8, 6, { size: 7, color: '#9fd0ff' });
+  if (!EDIT_LV) return;
+  const T = 16, ox = 8, oy = 24;
+  for (let y = 0; y < EDIT_LV.rows; y++) {
+    for (let x = 0; x < EDIT_LV.cols; x++) {
+      const v = EDIT_LV.get(x, y);
+      ctx.fillStyle = v === 0 ? '#b8d94a' : v === 1 ? '#5b6b8a' : '#4fa4b8';
+      ctx.fillRect(ox + x * T, oy + y * T, T - 1, T - 1);
+    }
+  }
+  Edit.draw();
+  text('格子數 ' + EDIT_LV.cols + '×' + EDIT_LV.rows + '　用滑鼠塗塗看', 8, 168,
+    { size: 6, color: '#64718a' });
+}
+
+window.addEventListener('load', () => {
+  const canvas = document.getElementById('game');
+  Display.init(canvas);
+  Display.fit(canvas, { w: 200, h: 210, maxScale: 3 });   // 固定邏輯尺寸，座標才好算
+  testNamespace();
+  LV = testLevel();
+  testEditInit();
+  window.V16 = {
+    version: TINY_ENGINE_VERSION,
+    pass: CASES.filter(c => c.ok).length,
+    fail: CASES.filter(c => !c.ok).length,
+    cases: CASES,
+  };
+  Loop.update = () => {};
+  Loop.render = () => draw();
+  Loop.start();
+});
+</script>
+</body>
+</html>

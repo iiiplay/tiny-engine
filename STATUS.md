@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.5.1**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.6.0**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -51,6 +51,10 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | **v1.5** `Scene.syncState`（切場景同步 `G.state`） | ✅ | 同上 |
 | **v1.5** 文件 `docs/api-grid.md`（碰撞保證／距離場／3 個範例／效能） | ✅ | README 互連 |
 | **v1.5.1** `sheetOf` 快取改成 `src|frames|fw|rows|fh`（同一張圖多種切法不再互相蓋掉） | ✅ | `tools/v15.py` 48 項 |
+| **v1.6** JSON 關卡 `Level`（兩種格式／驗證／`grid()`／`connected()`／物件） | ✅ | `tools/v16.py` 30 項 |
+| **v1.6** 畫格編輯器 `Edit`（塗格／換色／右鍵擦／拖曳／Ctrl+Z／存檔） | ✅ | 同上（真滑鼠事件） |
+| **v1.6** 素材工具 `gen_manifest.py`（自動算 frames／foot、逐格動畫合併） | ✅ | 同上（真實素材 + `node --check`） |
+| **v1.6** 撞名檢查 `globals.py` + `TE` 命名空間（50 個保留名稱） | ✅ | 同上（`--check` 對 tiny-keep 乾淨） |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |
@@ -75,7 +79,10 @@ python tools/serve.py                 # 起伺服器（自動挑埠 + QR）
 python tools/shot.py  <url>           # 冒煙測試（有 console 錯誤就 exit 1）
 python tools/v13.py   <url>           # v1.3 驗收（Scene/UI/離線/節流/成本）
 python tools/v14.py   <url>           # v1.4 驗收（翻轉／旋轉／軸心，26 項像素檢查）
-python tools/v15.py   <url>           # v1.5 驗收（格子碰撞／BFS／逐格動畫／Camera，39 項）
+python tools/v15.py   <url>           # v1.5 驗收（格子碰撞／BFS／逐格動畫／Camera）
+python tools/v16.py   <url>           # v1.6 驗收（JSON 關卡／編輯器／命名空間／工具）
+python tools/gen_manifest.py <dir>    # 掃素材 → manifest.js
+python tools/globals.py <game> --check # 撞名檢查
 python tools/pack.py                  # 合成單檔 engine/dist/tiny-engine.js
 python tools/soak.py 20 <url>         # 亂走 20 秒
 python tools/bench.py <url>/bench.html # 效能（fps < 45 失敗）
@@ -85,13 +92,14 @@ python demo/tools/make_art.py         # 重新產生 demo 精靈
 python demo/tools/make_audio.py       # 重新產生音效 + BGM
 ```
 
-## 還沒做（v1.5 之後的候選）
+## 還沒做（v1.6 之後的候選）
 
 1. **混音音量選單**（`Sfx.setMaster` 有了，缺 UI 元件）
-2. **JSON 關卡格式**＋ 簡易編輯器（`Grid.createFromTiles()` 已經可以直接吃產生器的地圖）
-3. **rollback netcode**（固定時間步已經有了，缺輸入預測）
-4. **`Grid` 的加權 A\***：目前只有 BFS 距離場（等權重）；要「地形有成本」再加 Dijkstra
-5. **`Grid.editor`**：滑鼠畫牆的除錯覆蓋層（`?edit=1`）
+2. **BGM 管理**（歌單／淡入淡出；`loadMusic` 有了，缺素材與排程）
+3. **`Net` 支援 4 人／重連**（現在硬性 2 人、房主權威）
+4. **`Grid` 的加權 A\***（地形有成本）＋轉角成本
+5. **編輯器的物件層**（現在只塗格子；`Level.objects` 有資料但 `Edit` 還沒畫/放）
+6. **關卡選單 UI**（`Level` 可以多張，但沒有現成的選單元件）
 
 ## 已知限制
 
