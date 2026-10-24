@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.7.0';
+const TINY_ENGINE_VERSION = '1.7.1';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -1994,6 +1994,7 @@ const Edit = {
   cell: 16,
   origin: { x: 0, y: 0 },
   paletteY: null,        // 色盤的 y（預設貼在畫面底部；會被遊戲 UI 擋到就自己指定）
+  markers: null,         // [{ key:'entry', name:'入口', color:'#e5484d' }] → 點了會寫進 level.meta[key]
   onChange: null,
   onSave: null,
   key: 'tiny-level',
@@ -2011,6 +2012,7 @@ const Edit = {
     this.cell = opt.cell || 16;
     this.origin = opt.origin || { x: 0, y: 0 };
     this.paletteY = opt.paletteY != null ? opt.paletteY : null;
+    this.markers = opt.markers || null;      // 標記（不算格子，存 meta）
     this.onChange = opt.onChange || null;
     this.onSave = opt.onSave || null;
     this.key = opt.key || 'tiny-level';
@@ -2060,12 +2062,13 @@ const Edit = {
       if (!this.enabled) return;
       if (e.ctrlKey && e.code === 'KeyZ') { this.undo(); e.preventDefault(); return; }
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= this.palette.length) { this.sel = n - 1; return; }
+      if (n >= 1 && n <= this.paletteItems().length) { this.sel = n - 1; return; }
       if (e.code === 'KeyG') { this.gridLines = !this.gridLines; return; }
       if (e.code === 'KeyS') { this.save(); return; }
       if (e.code === 'KeyX') { this.exportJSON(); return; }
-      if (e.code === 'KeyQ') { this.sel = (this.sel + this.palette.length - 1) % this.palette.length; return; }
-      if (e.code === 'KeyE') { this.sel = (this.sel + 1) % this.palette.length; return; }
+      const np = this.paletteItems().length;
+      if (e.code === 'KeyQ') { this.sel = (this.sel + np - 1) % np; return; }
+      if (e.code === 'KeyE') { this.sel = (this.sel + 1) % np; return; }
     });
   },
 
@@ -2075,6 +2078,20 @@ const Edit = {
   },
 
   /* ---------------- 色盤 ---------------- */
+  /* 色盤項目 = 格子色 + 標記（標記接在後面） */
+  paletteItems() {
+    const items = [];
+    for (let i = 0; i < this.palette.length; i++) {
+      items.push({ kind: 'tile', i, v: this.palette[i].v, name: this.palette[i].name, color: this.palette[i].color });
+    }
+    if (this.markers) {
+      for (const m of this.markers) {
+        items.push({ kind: 'mark', key: m.key, name: m.name, color: m.color || '#ffd45e' });
+      }
+    }
+    return items;
+  },
+
   paletteRect(i) {
     const w = 56, h = 14, gap = 2;
     const y = this.paletteY != null ? this.paletteY : GAME_H - h - 3;
@@ -2085,7 +2102,8 @@ const Edit = {
     const r = this.canvas.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width * GAME_W;
     const y = (e.clientY - r.top) / r.height * GAME_H;
-    for (let i = 0; i < this.palette.length; i++) {
+    const items = this.paletteItems();
+    for (let i = 0; i < items.length; i++) {
       const b = this.paletteRect(i);
       if (x >= b.x && y >= b.y && x <= b.x + b.w && y <= b.y + b.h) {
         this.sel = i;
@@ -2113,7 +2131,15 @@ const Edit = {
     if (!this.level || !this.level.inside(c.cx, c.cy)) return false;
     if (this.lastPaint && this.lastPaint.cx === c.cx && this.lastPaint.cy === c.cy) return false;
     this.lastPaint = c;
-    const v = this.painting < 0 ? 0 : (this.palette[this.sel] || this.palette[0]).v;
+    const item = this.paletteItems()[this.sel] || { kind: 'tile', v: 0 };
+    if (item.kind === 'mark') {
+      // 標記（入口／出口…）不算格子，寫進 level.meta
+      if (this.painting < 0) return false;
+      this.level.meta[item.key] = [c.cx, c.cy];
+      this.changed();
+      return true;
+    }
+    const v = this.painting < 0 ? 0 : item.v;
     if (this.level.get(c.cx, c.cy) === v) return false;
     this.level.set(c.cx, c.cy, v);
     this.changed();

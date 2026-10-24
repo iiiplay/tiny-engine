@@ -127,6 +127,24 @@ Edit.draw();         // 每帧最後呼叫：格線 + 游標 + 色盤 + 提示
 | `S` | 存到 localStorage（或 `onSave`） |
 | `X` | 把 JSON 印到 console（`Edit.lastJSON`） |
 
+### 標記（入口／出口／重生點…）
+
+格子以外的「點」用 `markers` 宣告，點了會寫進 `level.meta[key] = [cx, cy]`（不改格子值）：
+
+```js
+Edit.init({
+  level: lv,
+  palette: [{ v: 0, name: '草地', color: '#b8d94a' }, { v: 3, name: '牆', color: '#1d2c19' }],
+  markers: [
+    { key: 'entry', name: '入口', color: '#e5484d' },
+    { key: 'exit',  name: '出口', color: '#7fb3ff' },
+  ],
+});
+```
+
+色盤會自動變成「格子色 + 標記」（`Edit.paletteItems()`），標記會在畫面上畫成一個帶名字的小方塊。
+`LevelLib` 的關卡碼會一起帶 `meta.entry` / `meta.exit`，所以玩家自製的迷宮換了入口位置也能分享。
+
 **接進遊戲的方式**（重點：編輯模式要「吃掉」原本的操作）
 
 ```js

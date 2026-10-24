@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.1 — 2026-10-24
+
+### 編輯器支援「標記」
+- `Edit.init({ markers: [{ key:'entry', name:'入口', color:'#e5484d' }] })`
+  · 色盤會多出這些標記（`Edit.paletteItems()`），點了寫進 `level.meta[key] = [cx,cy]`（不動格子）
+  · 畫面上會畫出帶名字的標記；`Ctrl+Z` 不追蹤標記（只有格子會被復原）
+- `LevelLib` 的關卡碼一起帶 `meta.entry` / `meta.exit`，自製迷宮換了出入口也能分享
+
 ## v1.7.0 — 2026-10-24
 
 > 主題：**關卡可以分享**。v1.6 讓關卡變成 JSON，但只能存在自己的瀏覽器；

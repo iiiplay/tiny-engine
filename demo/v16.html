@@ -174,12 +174,23 @@ function testEditInit() {
     ],
     key: 'v16-edit',
     canvas: 'game',
+    markers: [
+      { key: 'entry', name: '入口', color: '#e5484d' },
+      { key: 'exit', name: '出口', color: '#7fb3ff' },
+    ],
   });
   check('Edit.init 綁好 level', Edit.level === EDIT_LV, true);
   check('Edit 預設關閉', Edit.enabled, false);
   Edit.sel = 1;              // 預設選「牆」，塗了才看得出變化
   Edit.toggle();
   check('toggle 之後開啟', Edit.enabled, true);
+  check('色盤 = 3 種格子 + 2 個標記', Edit.paletteItems().length, 5);
+  // 標記：選「入口」→ 點一格 → 寫進 meta（不是改格子）
+  Edit.sel = 3;
+  Edit.paint({ cx: 2, cy: 3 });
+  check('標記寫進 meta.entry', EDIT_LV.meta.entry, [2, 3]);
+  check('標記不會改格子值', EDIT_LV.get(2, 3), 0);
+  Edit.sel = 1;
   Edit.gridLines = true;
 }
 
