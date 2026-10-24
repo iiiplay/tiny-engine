@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.6.0**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.7.0**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -55,6 +55,7 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | **v1.6** 畫格編輯器 `Edit`（塗格／換色／右鍵擦／拖曳／Ctrl+Z／存檔） | ✅ | 同上（真滑鼠事件） |
 | **v1.6** 素材工具 `gen_manifest.py`（自動算 frames／foot、逐格動畫合併） | ✅ | 同上（真實素材 + `node --check`） |
 | **v1.6** 撞名檢查 `globals.py` + `TE` 命名空間（50 個保留名稱） | ✅ | 同上（`--check` 對 tiny-keep 乾淨） |
+| **v1.7** `LevelLib` 關卡碼（encode/decode）＋ localStorage 關卡庫 | ✅ | `tools/v16.py` 50 項 |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |
@@ -99,7 +100,7 @@ python demo/tools/make_audio.py       # 重新產生音效 + BGM
 3. **`Net` 支援 4 人／重連**（現在硬性 2 人、房主權威）
 4. **`Grid` 的加權 A\***（地形有成本）＋轉角成本
 5. **編輯器的物件層**（現在只塗格子；`Level.objects` 有資料但 `Edit` 還沒畫/放）
-6. **關卡選單 UI**（`Level` 可以多張，但沒有現成的選單元件）
+6. **關卡選單 UI**（`Level`／`LevelLib` 都有，選單由各遊戲自己畫；tiny-keep 已示範）
 
 ## 已知限制
 

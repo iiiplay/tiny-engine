@@ -25,7 +25,7 @@ const TE = {
     'drawSheet', 'drawDirSheet', 'drawCrop', 'drawSprite', 'frameOf', 'drawFrames',
     'shadow', 'Sprite', 'DIR_ROW', 'DIR_NAMES',
     /* 系統 */
-    'Sfx', 'Fx', 'Physics', 'Pathfind', 'Grid', 'Level', 'Edit', 'Save', 'Scene', 'Net',
+    'Sfx', 'Fx', 'Physics', 'Pathfind', 'Grid', 'Level', 'LevelLib', 'Edit', 'Save', 'Scene', 'Net',
     /* UI / 觸控 */
     'UI', 'text', 'hudPanel', 'panel', 'roundRect', 'inRect', 'TouchUI', 'Screen', 'buzz',
     /* 工具 */
@@ -41,7 +41,7 @@ const TE = {
     const refs = {
       G: () => G, Display: () => Display, Camera: () => Camera, Loop: () => Loop,
       Input: () => Input, Sfx: () => Sfx, Fx: () => Fx, Physics: () => Physics,
-      Pathfind: () => Pathfind, Grid: () => Grid, Level: () => Level, Edit: () => Edit,
+      Pathfind: () => Pathfind, Grid: () => Grid, Level: () => Level, LevelLib: () => LevelLib, Edit: () => Edit,
       Save: () => Save, Scene: () => Scene, Net: () => Net, Sprite: () => Sprite,
       UI: () => UI, TouchUI: () => TouchUI, Screen: () => Screen,
       U: () => U, DIRV: () => DIRV, ASSETS: () => ASSETS, SHEETS: () => SHEETS,

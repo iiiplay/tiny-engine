@@ -116,6 +116,43 @@ function testLevel() {
   check('create() 是獨立物件（不是同一個 Level）', lv !== lv5, true);
   check('Level 單例沒被動到', Level.cols, 0);
 
+  /* ---- LevelLib：關卡碼 + 關卡庫（v1.7）---- */
+  try { LevelLib.clear(); } catch (e) {}
+
+  const lvA = Level.create({ cols: 6, rows: 4, cell: 16, meta: { name: '測試關卡', mode: 'maze' } });
+  lvA.fillBorder(1);
+  lvA.set(2, 2, 2);
+  lvA.addObject('spawn', 1, 1, { team: 'red' });
+  const code = LevelLib.encode(lvA);
+  checkTrue('encode 產生 TL1- 開頭的碼', code.indexOf('TL1-') === 0, code.slice(0, 18) + '…');
+  checkTrue('關卡碼很短（< 300 字）', code.length < 300, code.length);
+  const back = LevelLib.decode(code);
+  check('decode 還原 tiles', Array.from(back.tiles).join(''), Array.from(lvA.tiles).join(''));
+  check('decode 還原名稱／模式', [back.meta.name, back.meta.mode], ['測試關卡', 'maze']);
+  check('decode 還原物件', [back.objects.length, back.objects[0].type, back.objects[0].data.team],
+        [1, 'spawn', 'red']);
+
+  let bad = '';
+  try { LevelLib.decode('TL1-@@@'); } catch (e) { bad = e.message; }
+  checkTrue('壞掉的碼會丟錯', bad.indexOf('[level]') === 0, bad);
+  let bad2 = '';
+  try { LevelLib.decode('hello'); } catch (e) { bad2 = e.message; }
+  checkTrue('不是關卡碼會丟錯', bad2.indexOf('不是關卡碼') > 0, bad2);
+
+  const e1 = LevelLib.add(lvA, '我的迷宮');
+  check('add 進關卡庫', LevelLib.list().length, 1);
+  check('entry 有名稱／尺寸', [e1.name, e1.cols, e1.rows], ['我的迷宮', 6, 4]);
+  const got = LevelLib.get(e1.id);
+  check('get 解回 Level', got.cols, 6);
+  LevelLib.rename(e1.id, '改名後');
+  check('rename', LevelLib.entry(e1.id).name, '改名後');
+  const imp = LevelLib.importCode(code, '匯入的');
+  check('importCode 存進庫', LevelLib.list().length, 2);
+  check('importCode 的名稱', imp.entry.name, '匯入的');
+  LevelLib.remove(e1.id);
+  check('remove', LevelLib.list().length, 1);
+  check('TE 有 LevelLib', TE.LevelLib === LevelLib, true);
+
   return lv;
 }
 

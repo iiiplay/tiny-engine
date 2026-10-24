@@ -24,7 +24,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 - **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
 - **v1.4 驗收頁**：`demo/v14.html`（`drawSprite` 的翻轉 ⇄ / 顛倒 ⇅ / 旋轉 ⟳ + 軸心 pivot）
 - **v1.5 驗收頁**：`demo/v15.html`（格子碰撞 / BFS 距離場 / 逐格動畫 / Camera.push）
-- **v1.6 驗收頁**：`demo/v16.html`（JSON 關卡 / 畫格編輯器 / `TE` 命名空間）
+- **v1.6 驗收頁**：`demo/v16.html`（JSON 關卡 / 畫格編輯器 / `TE` 命名空間 / 關卡碼 `LevelLib`）
 - **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
 
 ---
@@ -110,7 +110,7 @@ window.addEventListener('load', async () => {
 | `fx.js` | `Fx.burst/dust/spark/shake/hitstop/update/draw` |
 | `physics.js` | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds` |
 | `grid.js` | **`Grid.setup/create`**、`solid/setBlock/moveX/moveY/alignTo`、**`field`**（BFS 距離場）、`downhill/route`、`freeCells` |
-| `level.js` | **`Level.create/from/load/save`**、`get/set/fillRect/fillBorder`、`grid()`、`connected()`、`addObject/objectAt`、`validate()`、`exportRows()` |
+| `level.js` | **`Level.create/from/load/save`**、`get/set/fillRect/fillBorder`、`grid()`、`connected()`、`addObject/objectAt`、`validate()`、`exportRows()`、**`LevelLib.encode/decode`**（關卡碼）+ `add/list/get/importCode`（關卡庫） |
 | `edit.js` | **`Edit.init({level, palette, cell, origin, onChange})`**、`toggle()`、`draw()`、`save()`、`exportJSON()`、`undo()` |
 | `namespace.js` | **`TE`**（`TE.Grid` / `TE.Level` …）、`TE.reserved`、`TE.isReserved()`、`TE.checkGlobals()`、`TE.ns()` |
 | `pathfind.js` | `Pathfind.build({ cell, w, h, pad })`、`.find(x1,y1,x2,y2)`、`.lineClear()` |

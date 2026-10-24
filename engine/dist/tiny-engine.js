@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.6.0';
+const TINY_ENGINE_VERSION = '1.7.0';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -1763,6 +1763,194 @@ const Level = {
   },
 };
 
+/* ============================================================
+   LevelLib — 關卡庫 + 可分享的「關卡碼」  v1.7
+   ------------------------------------------------------------
+   目的：
+     · 玩家自己編的關卡要能存起來（選單裡挑）
+     · 能變成一串短碼傳給朋友（貼上就能玩）
+
+   關卡碼格式：`TL1-<base64(JSON)>`
+     壓縮：tiles 用 run-length（`<值36進位><數量36進位>` 串起來）
+     內容：名稱、欄列、meta.mode、物件
+
+   用法：
+     const code = LevelLib.encode(lv);        // → 'TL1-eyJuIjoi...'
+     const lv2  = LevelLib.decode(code);      // → 獨立 Level（壞碼會丟錯）
+     LevelLib.share(lv)                       // 產碼 + 複製到剪貼簿（有回傳碼）
+
+     // 關卡庫（存在 localStorage）
+     LevelLib.list();                         // [{ id, name, at, code }]
+     LevelLib.add(lv, '我的迷宮');             // → entry
+     LevelLib.get(id);                        // → 解碼後的 Level
+     LevelLib.update(id, lv);                 // 覆蓋
+     LevelLib.rename(id, '新名字');
+     LevelLib.remove(id);
+     LevelLib.importCode(code);               // 驗證 + 存進關卡庫 → entry
+
+   注意：
+     · encode 只支援 0~35 的格子值（我們用 0~3），超過會丟錯（避免默默壞掉）
+     · decode 會做 validate()，壞碼／版本不對會丟出看得懂的錯誤
+   ============================================================ */
+
+const LevelLib = {
+  PREFIX: 'TL1-',
+  KEY: 'tinyengine-levels',
+  MAX: 40,                       // 關卡庫上限（避免 localStorage 爆掉）
+
+  /* ---------- base64（支援中文） ---------- */
+  _b64enc(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  },
+  _b64dec(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  },
+
+  /* ---------- 關卡 → 碼 ---------- */
+  encode(lv) {
+    if (!lv || !lv.tiles) throw new Error('[level] encode 需要一個 Level');
+    const W = lv.cols, H = lv.rows;
+    if (lv.tiles.length !== W * H) throw new Error('[level] tiles 數量不對');
+    // run-length（值用 36 進位單字元）
+    let runs = '';
+    let prev = lv.tiles[0], n = 0;
+    for (let i = 0; i < lv.tiles.length; i++) {
+      const t = lv.tiles[i];
+      if (t > 35) throw new Error('[level] 格子值必須是 0~35（收到 ' + t + '）');
+      if (t === prev) { n++; continue; }
+      runs += prev.toString(36) + n.toString(36);
+      prev = t; n = 1;
+    }
+    runs += prev.toString(36) + n.toString(36);
+
+    const meta = lv.meta || {};
+    const payload = {
+      v: lv.v || 1,
+      n: meta.name || '',
+      c: W, r: H, cell: lv.cell || 16,
+      m: meta.mode || '',
+      t: runs,
+      o: lv.objects.length
+        ? lv.objects.map(o => [o.type, o.cx, o.cy, o.data || 0])
+        : 0,
+    };
+    return this.PREFIX + this._b64enc(JSON.stringify(payload));
+  },
+
+  /* ---------- 碼 → 關卡 ---------- */
+  decode(code) {
+    if (typeof code !== 'string') throw new Error('[level] 需要字串');
+    const clean = code.replace(/\s+/g, '');
+    if (clean.indexOf(this.PREFIX) !== 0) throw new Error('[level] 這不是關卡碼（開頭要 ' + this.PREFIX + '）');
+    let data;
+    try {
+      data = JSON.parse(this._b64dec(clean.slice(this.PREFIX.length)));
+    } catch (e) {
+      throw new Error('[level] 關卡碼壞掉了（base64/JSON 解析失敗）');
+    }
+    if (!data || !data.c || !data.r || typeof data.t !== 'string') {
+      throw new Error('[level] 關卡碼缺少欄位');
+    }
+    const W = data.c | 0, H = data.r | 0;
+    if (W < 2 || H < 2 || W > 200 || H > 200) throw new Error('[level] 關卡尺寸不合理（' + W + '×' + H + '）');
+
+    // 解 run-length
+    const tiles = new Uint8Array(W * H);
+    let idx = 0;
+    for (let i = 0; i < data.t.length; i += 2) {
+      const v = parseInt(data.t[i], 36);
+      const n = parseInt(data.t[i + 1], 36);
+      if (isNaN(v) || isNaN(n) || n <= 0) throw new Error('[level] 關卡碼的格子資料壞了');
+      for (let k = 0; k < n; k++) {
+        if (idx >= tiles.length) throw new Error('[level] 格子數量超過 ' + (W * H));
+        tiles[idx++] = v;
+      }
+    }
+    if (idx !== tiles.length) throw new Error('[level] 格子數量是 ' + idx + '，應該是 ' + (W * H));
+
+    const lv = Level.create({ cols: W, rows: H, cell: data.cell || 16, meta: data.meta || {} });
+    lv.tiles = tiles;
+    lv.meta.name = data.n || lv.meta.name || '';
+    lv.meta.mode = lv.meta.mode || '';
+    if (data.m) lv.meta.mode = data.m;
+    lv.objects = (data.o || []).map(o => ({
+      type: o[0], cx: o[1] | 0, cy: o[2] | 0, data: o[3] || null,
+    }));
+    const errs = lv.validate().filter(e => e.level === 'error');
+    if (errs.length) throw new Error('[level] ' + errs.map(e => e.msg).join('；'));
+    return lv;
+  },
+
+  /* ---------- 關卡庫（localStorage） ---------- */
+  list() {
+    const d = Save.get(this.KEY, null);
+    return (d && Array.isArray(d.items)) ? d.items : [];
+  },
+  _write(items) {
+    Save.set(this.KEY, { v: 1, items: items.slice(0, this.MAX) });
+    return items;
+  },
+  add(lv, name) {
+    const code = this.encode(lv);
+    const items = this.list();
+    const id = 'lv' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const entry = {
+      id,
+      name: name || (lv.meta && lv.meta.name) || ('自製關卡 ' + (items.length + 1)),
+      mode: (lv.meta && lv.meta.mode) || '',
+      cols: lv.cols, rows: lv.rows,
+      at: Date.now(),
+      code,
+    };
+    items.unshift(entry);
+    this._write(items);
+    return entry;
+  },
+  update(id, lv, name) {
+    const items = this.list();
+    const e = items.find(it => it.id === id);
+    if (!e) return this.add(lv, name);
+    e.code = this.encode(lv);
+    e.mode = (lv.meta && lv.meta.mode) || '';
+    e.cols = lv.cols; e.rows = lv.rows;
+    e.at = Date.now();
+    if (name) e.name = name;
+    this._write(items);
+    return e;
+  },
+  get(id) {
+    const e = this.list().find(it => it.id === id);
+    return e ? this.decode(e.code) : null;
+  },
+  entry(id) { return this.list().find(it => it.id === id) || null; },
+  rename(id, name) {
+    const items = this.list();
+    const e = items.find(it => it.id === id);
+    if (!e) return null;
+    e.name = name;
+    this._write(items);
+    return e;
+  },
+  remove(id) {
+    const items = this.list().filter(it => it.id !== id);
+    this._write(items);
+    return items;
+  },
+  clear() { Save.del(this.KEY); return this; },
+
+  /* 驗證 + 存進關卡庫（匯入用） */
+  importCode(code, name) {
+    const lv = this.decode(code);
+    return { level: lv, entry: this.add(lv, name || lv.meta.name || '匯入的關卡') };
+  },
+};
+
 /* ---- engine/edit.js ---- */
 /* ============================================================
    engine/edit.js — 格子關卡編輯器（畫格存 JSON）  v1.6
@@ -3114,7 +3302,7 @@ const TE = {
     'drawSheet', 'drawDirSheet', 'drawCrop', 'drawSprite', 'frameOf', 'drawFrames',
     'shadow', 'Sprite', 'DIR_ROW', 'DIR_NAMES',
     /* 系統 */
-    'Sfx', 'Fx', 'Physics', 'Pathfind', 'Grid', 'Level', 'Edit', 'Save', 'Scene', 'Net',
+    'Sfx', 'Fx', 'Physics', 'Pathfind', 'Grid', 'Level', 'LevelLib', 'Edit', 'Save', 'Scene', 'Net',
     /* UI / 觸控 */
     'UI', 'text', 'hudPanel', 'panel', 'roundRect', 'inRect', 'TouchUI', 'Screen', 'buzz',
     /* 工具 */
@@ -3130,7 +3318,7 @@ const TE = {
     const refs = {
       G: () => G, Display: () => Display, Camera: () => Camera, Loop: () => Loop,
       Input: () => Input, Sfx: () => Sfx, Fx: () => Fx, Physics: () => Physics,
-      Pathfind: () => Pathfind, Grid: () => Grid, Level: () => Level, Edit: () => Edit,
+      Pathfind: () => Pathfind, Grid: () => Grid, Level: () => Level, LevelLib: () => LevelLib, Edit: () => Edit,
       Save: () => Save, Scene: () => Scene, Net: () => Net, Sprite: () => Sprite,
       UI: () => UI, TouchUI: () => TouchUI, Screen: () => Screen,
       U: () => U, DIRV: () => DIRV, ASSETS: () => ASSETS, SHEETS: () => SHEETS,

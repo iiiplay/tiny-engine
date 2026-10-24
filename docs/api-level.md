@@ -145,6 +145,44 @@ if (location.search.includes('edit=1')) Edit.toggle();
 
 ---
 
+## `LevelLib`：關卡庫 + 可分享的「關卡碼」（v1.7）
+
+```js
+const code = LevelLib.encode(lv);      // 'TL1-eyJuIjoi...'（很短，可以直接貼給朋友）
+const lv2  = LevelLib.decode(code);    // 獨立 Level；壞碼會丟出看得懂的錯誤
+```
+
+| 方法 | 說明 |
+|---|---|
+| `encode(level)` | 關卡 → 字串碼（tiles 用 run-length，再 base64） |
+| `decode(code)` | 字串碼 → `Level`（會 `validate()`，壞碼／尺寸不合理會丟錯） |
+| `add(level, name)` | 存進關卡庫（localStorage）→ entry `{id, name, mode, cols, rows, at, code}` |
+| `update(id, level, name)` | 覆蓋既有的關卡 |
+| `list()` / `entry(id)` / `get(id)` | 列出／查 entry／取出解碼後的 Level |
+| `rename(id, name)` / `remove(id)` / `clear()` | 改名／刪除／清空 |
+| `importCode(code, name)` | 驗證 + 存進庫 → `{ level, entry }` |
+
+- 關卡碼格式：`TL1-<base64(JSON)>`，內容是 `{n,c,r,cell,m,t,o}`（名稱／欄列／模式／RLE 格子／物件）
+- **格子值只支援 0~35**（我們都用 0~3），超過 `encode` 會直接丟錯（不會默默壞掉）
+- 上限 40 張，避免 localStorage 爆掉
+- 範例：6×4 的小關卡約 **170 字**；20×12 的迷宮約 **250 字**
+
+```js
+// 分享 → 貼上就能玩
+const code = LevelLib.encode(MapData.level);
+navigator.clipboard.writeText(code);
+
+// 收到朋友的碼
+try {
+  const { level, entry } = LevelLib.importCode(code, '朋友的關卡');
+  playLevel(level);
+} catch (e) {
+  alert(e.message);          // '[level] 關卡碼壞掉了…'
+}
+```
+
+---
+
 ## `tools/gen_manifest.py`：素材表自動產生
 
 ```bash

@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.0 — 2026-10-24
+
+> 主題：**關卡可以分享**。v1.6 讓關卡變成 JSON，但只能存在自己的瀏覽器；
+> v1.7 加上「關卡碼」與關卡庫，玩家做的地圖能貼給朋友。
+
+### 新增 `LevelLib`（`engine/level.js`）
+- `encode(level)` → `TL1-<base64>` 關卡碼（tiles 用 run-length；6×4 約 170 字、20×12 約 250 字）
+- `decode(code)` → `Level`（驗證格子數量／尺寸／物件；壞碼丟出看得懂的錯誤）
+- 關卡庫（localStorage，上限 40 張）：
+  `add / update / get / entry / list / rename / remove / clear / importCode`
+- 格子值限制 0~35（超過 `encode` 直接丟錯，避免默默壞掉）
+
+### 其他
+- `TE.LevelLib`（命名空間入口）
+- `docs/api-level.md` 補 `LevelLib` 章節（含分享／匯入範例）
+- `tools/v16.py` 驗收加到 **50 項**：encode/decode 往返（含名稱、模式、物件）、壞碼、
+  非關卡碼、add/get/rename/import/remove、`TE.LevelLib`
+
 ## v1.6.0 — 2026-10-24
 
 > 主題：**關卡變成資料**。三款遊戲的關卡都寫在 JS 裡（`ROADS`／`LEVELS`），
