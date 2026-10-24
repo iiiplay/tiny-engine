@@ -1951,7 +1951,9 @@ const LevelLib = {
   /* 驗證 + 存進關卡庫（匯入用） */
   importCode(code, name) {
     const lv = this.decode(code);
-    return { level: lv, entry: this.add(lv, name || lv.meta.name || '匯入的關卡') };
+    const clean = code.replace(/\s+/g, '');
+    const dup = this.list().find(e => e.code === clean);   // 同一張就不要重複加
+    return { level: lv, entry: dup || this.add(lv, name || lv.meta.name || '匯入的關卡'), dup: !!dup };
   },
 };
 
