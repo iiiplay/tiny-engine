@@ -137,9 +137,10 @@ const Camera = {
   /* 世界座標 → 邏輯螢幕座標（給 UI/點擊用） */
   toScreen(x, y) { return { x: x - this.x, y: y - this.y }; },
 
-  /* 粗略剔除：這個矩形在畫面上嗎 */
+  /* 粗略剔除：這個矩形在畫面上嗎（cullEnabled = false 可關掉做對照） */
+  cullEnabled: true,
   visible(x, y, w, h) {
-    if (!this.enabled) return true;
+    if (!this.enabled || !this.cullEnabled) return true;
     return x + w >= this.x && x <= this.x + this.viewW() && y + h >= this.y && y <= this.y + this.viewH();
   },
 };

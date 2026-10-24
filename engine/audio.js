@@ -113,5 +113,11 @@ const Sfx = {
       this[k] = this.defs[k];
     }
   },
-  play(name) { const f = this.defs[name]; if (f) f(); },
+  /* 有同名音檔就播音檔，否則用註冊的合成音效 */
+  play(name, opt) {
+    if (this.clips[name]) return this.playClip(name, opt);
+    const f = this.defs[name];
+    if (f) f();
+    return null;
+  },
 };

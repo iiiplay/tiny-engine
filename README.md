@@ -129,6 +129,53 @@ if (path[0]) { /* 往 path[0] 走，到了就 shift() */ }
 
 ---
 
+## 效能台（會顯示 FPS）
+
+```
+http://<你的IP>:8766/demo/bench.html?n=200&cull=1&w=2400&h=1600
+```
+
+畫面上會直接看到 **大字 FPS + 折線圖**、同屏實體數、render/update 成本。
+`?cull=0` 可以關掉剔除做對照。跑 3 秒後結果會寫進 `window.__bench`。
+
+```bash
+python tools/bench.py http://localhost:8766/demo/bench.html    # CI 會用這支把關（fps < 45 就失敗）
+```
+
+| 案例（世界大小 / 實體數） | fps | render | 同屏 |
+|---|---|---|---|
+| 1600×1200 / 100 | 60 | 0.20 ms | 16 / 100 |
+| 2400×1600 / 200 | 60 | 0.20 ms | 14 / 200 |
+| 2400×1600 / 200（關閉剔除） | 60 | 0.30 ms | 200 / 200 |
+| 3200×2000 / 400 | 60 | 0.10 ms | 18 / 400 |
+
+## 音檔（可選）
+
+`demo/tools/make_audio.py` 會用**純 Python 標準庫**產生音效與 4 秒循環 BGM（沒有任何第三方素材）：
+
+```
+demo/assets/sfx/coin.wav  hit.wav  bump.wav  win.wav
+demo/assets/bgm.wav
+```
+
+```js
+await Sfx.loadClips({ coin: 'assets/sfx/coin.wav' });   // 載入
+Sfx.loadMusic('assets/bgm.wav', { loop: true, volume: 0.5 });
+Sfx.playMusic();                                        // 第一次點擊/按鍵之後才播（瀏覽器規則）
+Sfx.play('coin');       // 有同名音檔就用音檔，沒有就退回合成音效
+Sfx.stopMusic();        // demo 裡按 M 可以開關
+```
+
+## CI
+
+`.github/workflows/test.yml`：每次 push 會自動跑
+
+1. 所有 `engine/*.js`、`demo/*.js` 的 `node --check`
+2. 所有工具的 Python 語法檢查
+3. 起伺服器 → `tools/shot.py`（載入/開始/移動/鏡頭/F3，**有 console 錯誤就失敗**）
+4. `tools/soak.py`（亂走 8 秒）
+5. `tools/bench.py`（大地圖 + 剔除，**fps < 45 就失敗**）
+
 ## 效能（實測，Chromium headless）
 
 | 敵人數 | 桌機 render / update | 手機 render / update |

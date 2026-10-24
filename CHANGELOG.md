@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.1.0 — 2026-10-24
+
+### 音檔（實測）
+- `demo/tools/make_audio.py`：用純 Python 標準庫產生 4 個音效 + 4 秒循環 BGM
+- `Sfx.play(name)` 改成「有同名音檔就用音檔，否則用合成音效」（呼叫端不用改）
+- demo 載入音檔並在開始時播 BGM、按 `M` 開關音樂
+- 驗證：`Sfx.clips` 全部載入、`playClip` 正常、`music.paused === false`
+
+### 效能台（會顯示 FPS）
+- 新增 `demo/bench.html` + `demo/bench.js`：`?n=200&cull=1&w=2400&h=1600`
+- 畫面直接顯示**大字 FPS + 折線圖**、同屏實體數、render/update 成本，跑完顯示結果框
+- `Camera.cullEnabled` 可關閉剔除做對照
+- 新增 `tools/bench.py`（CI 把關：fps < 45 失敗）
+- 實測：2400×1600 / 200 隻 → 60fps、render 0.20ms、同屏 14/200（關剔除則 200/200）
+
+### CI
+- `.github/workflows/test.yml`：node --check → Python 語法 → 起伺服器 → shot → soak → bench
+- `tools/shot.py` 遇到 JS 錯誤 / 資源 404 會 `exit 1`（CI 真的會紅）
+
+### 其他
+- `tools/serve.py`：專案根目錄有 `index.html` 或 `demo/` 就服務專案本身
+- 修 demo/bench 的素材路徑（`assets/hero.png`）
+
 ## v1.0.0 — 2026-10-24
 
 第一個可用版本。

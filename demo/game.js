@@ -96,11 +96,19 @@ function startGame() {
   G_.best = Save.get('demo:best', null);
   G_.record = null;
   Sfx.play('start');
+  Sfx.playMusic();          // 第一次點畫面/按鍵後才播，符合自動播放規則
+}
+
+/* M 鍵：音樂開關 */
+function toggleMusic() {
+  if (!Sfx.music) return;
+  if (Sfx.music.paused) Sfx.playMusic(); else Sfx.stopMusic();
 }
 
 /* ---------------- 更新 ---------------- */
 function update(dt) {
   if (Input.justPressed('debug')) Loop.toggleDebug();
+  if (Input.justPressed('music')) toggleMusic();
 
   if (G.state === 'title') {
     if (Input.justPressed('confirm') || Input.justPressed('sword')) startGame();
@@ -296,9 +304,17 @@ G.tap = function () {
 /* ---------------- 啟動 ---------------- */
 window.addEventListener('load', async () => {
   Display.init(document.getElementById('game'));
-  Input.init({});
+  Input.init({ KeyM: 'music' });
   const label = document.getElementById('loading');
   await loadAll(MANIFEST, (p) => { if (label) label.textContent = '載入中… ' + Math.round(p * 100) + '%'; });
+  /* 音檔（有就用音檔，沒有就退回合成音效） */
+  await Sfx.loadClips({
+    coin: 'assets/sfx/coin.wav',
+    hit: 'assets/sfx/hit.wav',
+    bump: 'assets/sfx/bump.wav',
+    win: 'assets/sfx/win.wav',
+  });
+  Sfx.loadMusic('assets/bgm.wav', { loop: true, volume: 0.5 });
   if (label) label.remove();
 
   Screen.init();

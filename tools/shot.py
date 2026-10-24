@@ -40,3 +40,10 @@ with sync_playwright() as p:
     print('\n'.join(logs[:20]) or '(none)')
     print('shots ->', OUT)
     b.close()
+
+# 有任何 JS 錯誤 / 資源載入失敗就讓 CI 失敗
+fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+if fatal:
+    print('FAILED: %d 個錯誤' % len(fatal))
+    sys.exit(1)
+print('PASS')

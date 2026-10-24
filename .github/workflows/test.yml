@@ -1,0 +1,72 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: JS 語法檢查
+        run: |
+          set -e
+          for f in engine/*.js demo/*.js; do
+            echo "check $f"
+            node --check "$f"
+          done
+
+      - name: Python 語法檢查
+        run: |
+          set -e
+          for f in tools/*.py demo/tools/*.py; do
+            echo "check $f"
+            python -c "import ast,sys; ast.parse(open('$f',encoding='utf-8').read())"
+          done
+
+      - name: 安裝 Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: 起伺服器
+        run: |
+          python tools/serve.py 8766 > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:8766/demo/index.html; then
+              echo "server up"; break
+            fi
+            sleep 1
+          done
+          cat /tmp/serve.log
+
+      - name: 冒煙測試（載入 / 開始 / 移動 / 鏡頭 / F3 / console 錯誤）
+        run: python tools/shot.py http://localhost:8766/demo/
+
+      - name: 自動遊玩壓力測試
+        run: python tools/soak.py 8 http://localhost:8766/demo/
+
+      - name: 效能（大地圖 + 剔除，fps 低於 45 就失敗）
+        run: python tools/bench.py http://localhost:8766/demo/bench.html
+
+      - name: 上傳截圖
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots/
+          if-no-files-found: ignore
