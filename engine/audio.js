@@ -6,6 +6,7 @@
 const Sfx = {
   ctx: null,
   master: 0.5,
+  muted: false,
   unlock() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -13,14 +14,27 @@ const Sfx = {
       try {
         this.ctx = new AC();
         this.gain = this.ctx.createGain();
-        this.gain.gain.value = this.master;
+        this.gain.gain.value = this.muted ? 0 : this.master;
         this.gain.connect(this.ctx.destination);
       } catch (e) { /* 忽略 */ }
     }
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   },
+  /* 主音量（0..1）。靜音時 gain 直接歸零，但 oscillator 照常排程（成本極低） */
+  setMaster(v) {
+    this.master = Math.max(0, Math.min(1, v));
+    if (this.gain) this.gain.gain.value = this.muted ? 0 : this.master;
+    return this;
+  },
+  /* 靜音切換：Sfx.mute(true) / Sfx.mute() 反轉 / Sfx.mute(false) */
+  mute(on) {
+    this.muted = (on == null) ? !this.muted : !!on;
+    if (this.gain) this.gain.gain.value = this.muted ? 0 : this.master;
+    if (this.music) this.music.volume = this.muted ? 0 : this.musicGain;
+    return this.muted;
+  },
   tone(f0, f1, dur, type = 'square', vol = 0.25, delay = 0) {
-    if (!this.ctx) return;
+    if (!this.ctx || this.muted) return;
     const t = this.ctx.currentTime + delay;
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
@@ -34,7 +48,7 @@ const Sfx = {
     o.start(t); o.stop(t + dur + 0.02);
   },
   noise(dur, vol = 0.2, freq = 1200, delay = 0) {
-    if (!this.ctx) return;
+    if (!this.ctx || this.muted) return;
     const t = this.ctx.currentTime + delay;
     const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);

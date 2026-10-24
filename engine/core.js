@@ -62,6 +62,38 @@ const Display = {
     };
   },
 
+  /* 固定邏輯尺寸的版面（小卡片 / 多視窗 / 桌寵用）
+     不像 layout() 會填滿整個視窗，這裡由呼叫端決定邏輯尺寸與縮放倍率。
+     Display.fit(canvas, { w: 220, h: 130 })        // 自動挑 0.25 倍率
+     Display.fit(canvas, { w: 220, h: 130, scale: 2 })  // 固定 2 倍
+     回傳實際使用的 cssScale。 */
+  fit(canvas, opt) {
+    opt = opt || {};
+    const w = opt.w || GAME_W;
+    const h = opt.h || GAME_H;
+    GAME_W = w;
+    GAME_H = h;
+    const dpr = opt.dpr != null ? opt.dpr : Math.min(window.devicePixelRatio || 1, 2);
+    let s = opt.scale;
+    if (s == null) {
+      const maxW = opt.maxW || innerWidth;
+      const maxH = opt.maxH || innerHeight;
+      s = Math.min(maxW / w, maxH / h, opt.maxScale || 3);
+      s = Math.max(0.5, Math.floor(s * 4) / 4);
+    }
+    G.cssScale = s;
+    G.scale = Math.round(s * dpr * 2) / 2;
+    canvas.style.width = Math.round(w * s) + 'px';
+    canvas.style.height = Math.round(h * s) + 'px';
+    canvas.width = Math.round(w * G.scale);
+    canvas.height = Math.round(h * G.scale);
+    G.canvas = canvas;
+    G.ctx = canvas.getContext('2d');
+    G.ctx.imageSmoothingEnabled = false;
+    G.ctx.textRendering = 'geometricPrecision';
+    return s;
+  },
+
   init(canvas) {
     G.canvas = canvas;
     G.ctx = canvas.getContext('2d');
@@ -158,6 +190,13 @@ const Loop = {
      >0  = 固定步長（例：1/60，物理決定性、可重播、連線更穩） */
   fixedStep: 0,
   maxSteps: 5,
+  /* 繪製節流：0 = 每帧都畫；>0 = 每秒最多畫幾次（省電，模擬照跑）
+     例：陪伴類遊戲切到背景/專注模式時 `Loop.renderRate = 4`，
+         摺疊起來時 `Loop.renderPaused = true`（模擬仍然推進）。 */
+  renderRate: 0,
+  renderPaused: false,
+  renderCount: 0,
+  _lastRenderAt: 0,
   _last: 0,
   _lastRaf: 0,
   _acc: 0,
@@ -202,7 +241,15 @@ const Loop = {
       this.step(raw);
     }
 
-    if (this.render) this.render();
+    /* 繪製（可節流 / 可暫停）；模擬與 Camera 不受影響 */
+    if (this.render && !this.renderPaused) {
+      const now2 = performance.now();
+      if (this.renderRate <= 0 || now2 - this._lastRenderAt >= 1000 / this.renderRate) {
+        this._lastRenderAt = now2;
+        this.renderCount++;
+        this.render();
+      }
+    }
     if (Camera) Camera.update(raw);
     Input.endFrame();
 
@@ -231,6 +278,18 @@ const Loop = {
   toggleDebug() {
     this._showDebug = !this._showDebug;
     return this._showDebug;
+  },
+
+  /* 配合 document.hidden：分頁在背景時不畫（rAF 本來就會停，這裡補保險） */
+  autoPauseWhenHidden: false,
+  watchVisibility() {
+    if (this._visBound) return this;
+    this._visBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!this.autoPauseWhenHidden) return;
+      this.renderPaused = document.hidden;
+    });
+    return this;
   },
 
   /* ---- 除錯 overlay（F3）：FPS / 每帧成本 / 遊戲自訂資訊 / 碰撞框 ---- */

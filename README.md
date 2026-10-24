@@ -21,6 +21,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 - **固定時間步**：`Loop.fixedStep = 1/60`（物理決定性）
 - **排行榜**：過關時間自動存 localStorage，破紀錄會顯示「新紀錄」
 - **精靈動畫**：6 格走近動畫（素材是 `demo/tools/make_art.py` 程式產生的，沒有授權問題）
+- **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
 - **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
 
 ---
@@ -48,6 +49,7 @@ cp -r engine/ ../我的遊戲/engine/
 <script src="engine/physics.js"></script>
 <script src="engine/pathfind.js"></script>
 <script src="engine/save.js"></script>
+<script src="engine/scene.js"></script>
 <script src="engine/ui.js"></script>
 <script src="engine/touch.js"></script>
 <script src="engine/net.js"></script>

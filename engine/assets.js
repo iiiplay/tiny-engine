@@ -18,9 +18,11 @@ function makeWhite(img) {
   return c;
 }
 
-/* 手寫素材表用：A.def(src, frames, foot) */
-function assetDef(src, frames, foot, fw) {
-  return { src, frames: frames || 1, foot: foot, fw: fw };
+/* 手寫素材表用：assetDef(src, frames, foot, fw, { rows, fh })
+   rows > 1 代表「N 列 × frames 欄」的動畫表（例如 4 方向 × 4 影格） */
+function assetDef(src, frames, foot, fw, opt) {
+  opt = opt || {};
+  return { src, frames: frames || 1, foot: foot, fw: fw, rows: opt.rows || 1, fh: opt.fh };
 }
 
 function sheetOf(def) {
@@ -29,13 +31,17 @@ function sheetOf(def) {
   if (!s) {
     const img = ASSETS[def.src];
     if (!img) return null;
+    const rows = def.rows || 1;
+    const fh = def.fh || (rows > 1 ? Math.floor(img.height / rows) : img.height);
     s = SHEETS[def.src] = {
       src: def.src,
       img,
       frames: def.frames || 1,
       fw: def.fw || Math.floor(img.width / (def.frames || 1)),
-      h: def.h || img.height,
-      foot: def.foot != null ? def.foot : img.height,
+      h: fh,
+      rows,
+      fh,
+      foot: def.foot != null ? def.foot : fh,
       white: makeWhite(img),
     };
   }

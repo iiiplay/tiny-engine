@@ -50,6 +50,54 @@ const Save = {
     } catch (e) {}
   },
 
+  /* ---- 離線收益（掛機／陪伴類遊戲用） ----
+     用法：每分鐘存一次進度，回來時問「我不在的時候賺了多少」
+       Save.offline('idle', { hours: 8, rate: 120 })   // rate = 每小時產量
+       → { seconds, hours, gain, capped, first, away }
+     ・第一次呼叫只記錄時間，回傳 first=true、gain=0
+     ・時鐘往回撥（或換電腦）不會給負數，一律當 0
+     ・rate 也可以傳函式 (seconds) => gain，自己算倍率
+     ※ 只動 localStorage 的 `<key>:ts`，不會覆蓋你的存檔內容。 */
+  offline(key, opt) {
+    opt = opt || {};
+    const now = Date.now();
+    const tsKey = key + ':ts';
+    const last = this.get(tsKey, 0);
+    const capH = opt.hours != null ? opt.hours : 8;
+    this.set(tsKey, now);
+    if (!last) return { seconds: 0, hours: 0, gain: 0, capped: false, first: true, away: 0 };
+    let sec = (now - last) / 1000;
+    if (!isFinite(sec) || sec < 0) sec = 0;          // 時鐘倒退 → 當 0
+    const away = sec;
+    const capped = sec > capH * 3600;
+    if (capped) sec = capH * 3600;
+    const gain = typeof opt.rate === 'function'
+      ? opt.rate(sec)
+      : (opt.rate || 0) * (sec / 3600);
+    return { seconds: Math.round(sec), hours: sec / 3600, gain, capped, first: false, away: Math.round(away) };
+  },
+
+  /* 存檔版本升級：migrations = { 0: (data)=>…, 1: … }（key 是「舊版號」）
+     回傳升級後的資料；沒有存檔時回傳 def。 */
+  migrate(key, version, migrations, def) {
+    const raw = this.get(key, null);
+    if (!raw) return def === undefined ? null : def;
+    let v = raw.version != null ? raw.version : (raw.v != null ? raw.v : 0);
+    let data = raw;
+    let guard = 0;
+    while (v < version && guard++ < 50) {
+      const fn = migrations && migrations[v];
+      if (!fn) break;
+      const out = fn(data);
+      if (out) data = out;
+      v = (data.version != null) ? data.version : v + 1;
+      data.version = v;
+    }
+    data.version = v;
+    data.v = v;
+    return data;
+  },
+
   /* ---- 排行榜 ---- */
   scores(board, max) {
     return this.get('board:' + board, []).slice(0, max || 10);

@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.2.0**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.3.0**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -33,6 +33,14 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | 音檔 `Sfx.loadClip/playClip/loadMusic` | ✅ | demo BGM + 4 音效，`Sfx.play()` 有音檔優先 |
 | 觸控（搖桿／按鈕／情境按鈕／全螢幕／震動／安全邊距） | ✅ | tiny-arena 手機實測 |
 | 區網 `Net`（房主權威、快照、remote 輸入） | ✅ | `tools/nettest.py` PASS |
+| **v1.3** 場景管理器 `Scene`（register/go/overlay/attach） | ✅ | `tools/v13.py` 切換＋覆蓋層不中斷 |
+| **v1.3** UI 元件化（熱區池／按鈕／chip／bar／九宮格／文字量測／bind） | ✅ | 200 個按鈕 draw 0.6ms、命中 0.3ms |
+| **v1.3** 離線收益 `Save.offline`＋ `Save.migrate` | ✅ | 2h→240、20h→截 8h、時鐘倒退→0 |
+| **v1.3** 四方向動畫表 `drawDirSheet`／`assetDef(..., {rows})` | ✅ | 4×4 表解析正確、四方向都畫得出來 |
+| **v1.3** 繪製節流 `Loop.renderRate` / `renderPaused` / `watchVisibility` | ✅ | 10 fps 模式 1.2 秒畫 11 次，模擬照跑 |
+| **v1.3** 固定邏輯尺寸版面 `Display.fit`（小卡片／桌寵） | ✅ | v13 demo 480×270 卡片 |
+| **v1.3** 音量 `Sfx.setMaster` / `Sfx.mute` | ✅ | 靜音時 gain 歸零 |
+| **v1.3** 單檔打包 `tools/pack.py` → `engine/dist/tiny-engine.js` | ✅ | 73.5KB、`node --check`、`--check` 同步 |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |
@@ -55,6 +63,8 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 ```bash
 python tools/serve.py                 # 起伺服器（自動挑埠 + QR）
 python tools/shot.py  <url>           # 冒煙測試（有 console 錯誤就 exit 1）
+python tools/v13.py   <url>           # v1.3 驗收（Scene/UI/離線/節流/成本）
+python tools/pack.py                  # 合成單檔 engine/dist/tiny-engine.js
 python tools/soak.py 20 <url>         # 亂走 20 秒
 python tools/bench.py <url>/bench.html # 效能（fps < 45 失敗）
 python tools/nettest.py <url>/net.html # 區網兩人

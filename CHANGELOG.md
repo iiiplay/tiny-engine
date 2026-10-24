@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.3.0 — 2026-10-24
+
+> 主題：**把「桌寵／掛機／小卡片」需要的東西補進引擎**（來自 desktop-hero 專案的實戰需求）
+
+### 場景管理器 `engine/scene.js`（新）
+- `Scene.register(name, { enter, exit, update, render, resize })`
+- `Scene.go(name, params)`／`Scene.restart()`／`Scene.t`（進場秒數）
+- `Scene.overlay(def)`：覆蓋層（面板／暫停選單），**模擬不中斷**、`closeOverlay()`
+- `Scene.attach()`：一行接上 `Loop`；`beforeUpdate` / `beforeRender` / `afterRender` 鉤子
+- `Scene.debugInfo()` 可直接給 `Loop.debugInfo`
+
+### UI 元件化 `engine/ui.js`
+- 熱區池：`UI.beginFrame()` / `UI.hot()` / `UI.hitAt()` / `UI.pointer()` / `UI.click()`
+  · **熱區物件重複使用**，每帧 0 配置；後註冊的優先度高（大卡片 + 小按鈕）
+- `UI.button()`（hover／disabled／熱區一次搞定）、`UI.chip()`、`UI.bar()`、`UI.roundRect()`
+- `UI.nineSlice(img, slice, x, y, w, h)`：GUI 素材九宮格邊框
+- `UI.measure(str, size)`：文字寬度快取（>600 筆自動清）
+- `UI.bind(canvas, onAct)`：滑鼠／觸控 → 熱區，含游標變化與 `Sfx.unlock`
+
+### 離線收益 `engine/save.js`
+- `Save.offline(key, { hours, rate })` → `{ seconds, hours, gain, capped, first, away }`
+  · rate 可為數字（每小時）或函式；**時鐘倒退視為 0**；上限預設 8 小時
+- `Save.migrate(key, version, migrations, def)`：存檔版本升級
+
+### 四方向動畫表
+- `assetDef(src, frames, foot, fw, { rows })`；`sheetOf()` 會推出 `rows` / `fh`
+- `drawDirSheet(sheet, dir, frame, x, y, opt)`＋`DIR_ROW`（下／左／上／右，Tiny Adventure Pack 慣例）
+
+### 繪製節流（省電）
+- `Loop.renderRate`（>0 = 每秒最多畫幾次）、`Loop.renderPaused`、`Loop.renderCount`
+- `Loop.watchVisibility()`＋`autoPauseWhenHidden`：分頁隱藏自動停畫（模擬照跑）
+
+### 小卡片版面
+- `Display.fit(canvas, { w, h, scale })`：固定邏輯尺寸＋指定倍率，不再假設填滿視窗
+
+### 音量
+- `Sfx.setMaster(v)`、`Sfx.mute(on)`；靜音時 gain 歸零、不排程音訊
+
+### 打包與測試
+- `tools/pack.py`：14 支合成 `engine/dist/tiny-engine.js`（73.5 KB）；`--check` 給 CI 用
+- `demo/v13.html` + `demo/v13.js`：驗收頁（Scene 切換／覆蓋層／離線／四方向／節流／UI 成本）
+- `tools/v13.py`：端到端測試
+- **效能（實測）**：200 個按鈕 0.6 ms 繪製、0.3 ms 命中；10 fps 節流模式 1.2 秒畫 11 次；
+  demo 仍 60 fps、bench 全部 PASS、`shot`／`soak` PASS
+- CI 新增 `tools/v13.py` 與 `tools/pack.py --check` 兩關
+
 ## v1.2.0 — 2026-10-24
 
 ### A\* 節流（大量單位）

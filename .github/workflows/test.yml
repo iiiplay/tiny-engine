@@ -43,6 +43,9 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: 單檔打包同步檢查
+        run: python tools/pack.py --check
+
       - name: 起伺服器
         run: |
           python tools/serve.py 8766 > /tmp/serve.log 2>&1 &
@@ -62,6 +65,9 @@ jobs:
 
       - name: 區網連線（兩個分頁：房主 + 加入端）
         run: python tools/nettest.py http://localhost:8766/demo/net.html
+
+      - name: v1.3 驗收（Scene / UI / 離線 / 節流）
+        run: python tools/v13.py http://localhost:8766/demo/v13.html
 
       - name: 效能（大地圖 + 剔除 + A* 節流，fps 低於 45 就失敗）
         run: python tools/bench.py http://localhost:8766/demo/bench.html
