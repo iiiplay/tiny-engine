@@ -270,7 +270,7 @@ def resolve_root(argv):
     if '--root' in argv:
         i = argv.index('--root')
         return os.path.abspath(argv[i + 1]), argv[:i] + argv[i + 2:]
-    if os.path.exists(os.path.join(APP, 'index.html')):
+    if os.path.exists(os.path.join(APP, 'index.html')) or os.path.isdir(os.path.join(APP, 'demo')):
         return APP, argv
     return os.path.dirname(APP), argv
 
@@ -282,8 +282,8 @@ if __name__ == '__main__':
 
     # 讓 / 導向正確的位置
     if os.path.abspath(root) == os.path.abspath(APP):
-        Handler.index_path = '/index.html'
-        url_path = '/'
+        Handler.index_path = '/index.html' if os.path.exists(os.path.join(APP, 'index.html')) else '/demo/index.html'
+        url_path = '/' if Handler.index_path == '/index.html' else '/demo/'
     else:
         Handler.index_path = '/' + os.path.basename(APP) + '/index.html'
         url_path = '/' + os.path.basename(APP) + '/'
