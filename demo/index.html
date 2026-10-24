@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d0f1a">
+<title>TinyEngine — Demo（捲動鏡頭・A*・排行榜）</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin:0; height:100%; background:#0d0f1a; overflow:hidden; position:fixed; inset:0;
+    touch-action:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+    font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif; }
+  #game { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:block; image-rendering:pixelated; background:#2b3350; }
+  #ui { position:absolute; inset:0; width:100%; height:100%; display:block; background:transparent !important; pointer-events:none; z-index:5; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#ffe9a8; font-size:14px; letter-spacing:.1em; background:#0d0f1a; z-index:10; }
+  #fsBtn { position:fixed; left:50%; top:max(6px, env(safe-area-inset-top)); transform:translateX(-50%);
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center; border-radius:14px;
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(16,20,38,.55); color:#ffe9a8; padding:0;
+    cursor:pointer; z-index:20; touch-action:manipulation; }
+  #fsBtn .ico-out { display:none; }
+  #fsBtn.is-full .ico-in { display:none; }
+  #fsBtn.is-full .ico-out { display:block; }
+</style>
+</head>
+<body>
+  <canvas id="game" width="1200" height="720"></canvas>
+  <canvas id="ui"></canvas>
+  <div id="loading">載入中…</div>
+  <button id="fsBtn" aria-label="切換全螢幕">
+    <svg class="ico-in" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    <svg class="ico-out" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+  </button>
+
+  <script src="../engine/util.js?v=1"></script>
+  <script src="../engine/core.js?v=1"></script>
+  <script src="../engine/assets.js?v=1"></script>
+  <script src="../engine/sprite.js?v=1"></script>
+  <script src="../engine/input.js?v=1"></script>
+  <script src="../engine/audio.js?v=1"></script>
+  <script src="../engine/fx.js?v=1"></script>
+  <script src="../engine/physics.js?v=1"></script>
+  <script src="../engine/pathfind.js?v=1"></script>
+  <script src="../engine/save.js?v=1"></script>
+  <script src="../engine/ui.js?v=1"></script>
+  <script src="../engine/touch.js?v=1"></script>
+  <script src="../engine/net.js?v=1"></script>
+  <script src="game.js?v=1"></script>
+</body>
+</html>

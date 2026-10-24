@@ -1,0 +1,177 @@
+# TinyEngine
+
+給「**16×16 俯視像素、單一螢幕或小地圖、動作遊戲**」用的極簡 2D 引擎。
+**純 HTML5 Canvas + 原生 JS，零依賴、零 build** —— 雙擊 `index.html` 就能玩。
+
+```bash
+python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
+# → http://localhost:8766/demo/
+```
+
+> 它不是 Unity / Godot 的替代品。刻意的取捨：**把一種遊戲做到順手，其他一律不做。**
+
+---
+
+## Demo（跑起來看最快）
+
+`demo/` 是一個 300 行的完整小遊戲，示範引擎的每一項核心能力：
+
+- **捲動鏡頭**：世界 900×620，畫面 400×自動高，鏡頭平滑跟隨並卡在世界邊界內
+- **A\* 尋路**：3 隻追擊者繞過障礙物追你（`F3` 會畫出路徑）
+- **固定時間步**：`Loop.fixedStep = 1/60`（物理決定性）
+- **排行榜**：過關時間自動存 localStorage，破紀錄會顯示「新紀錄」
+- **精靈動畫**：6 格走近動畫（素材是 `demo/tools/make_art.py` 程式產生的，沒有授權問題）
+- **碰撞 / 粒子 / 合成音效 / 觸控搖桿 / 除錯 overlay**
+
+---
+
+## 安裝到你的專案
+
+```bash
+# 方法 1：一行開新專案（引擎 + demo 骨架 + 工具）
+python tools/new_project.py ../我的遊戲
+
+# 方法 2：手動複製
+cp -r engine/ ../我的遊戲/engine/
+```
+
+`index.html` 依序載入（順序不能換）：
+
+```html
+<script src="engine/util.js"></script>
+<script src="engine/core.js"></script>
+<script src="engine/assets.js"></script>
+<script src="engine/sprite.js"></script>
+<script src="engine/input.js"></script>
+<script src="engine/audio.js"></script>
+<script src="engine/fx.js"></script>
+<script src="engine/physics.js"></script>
+<script src="engine/pathfind.js"></script>
+<script src="engine/save.js"></script>
+<script src="engine/ui.js"></script>
+<script src="engine/touch.js"></script>
+<script src="engine/net.js"></script>
+<script src="game.js"></script>          <!-- 你的遊戲 -->
+```
+
+最小啟動骨架：
+
+```js
+GAME_W = 400;                            // 畫面邏輯寬度（高度自動依螢幕比例）
+Camera.enabled = false;                  // 單螢幕遊戲不用鏡頭
+Loop.fixedStep = 0;                      // 0 = 真實 dt；1/60 = 固定步長
+
+function update(dt) {
+  const mv = Input.moveAxis();           // 8 方向 / 搖桿連續角度
+  Physics.moveAxis(player, dx, dy, { bw: 8, bh: 6, by: -6 });
+  if (Input.justPressed('sword')) Sfx.play('swing');
+}
+
+function render() {
+  const ctx = G.ctx;
+  Camera.apply(ctx, G.scale);            // 沒開鏡頭時等於 (0,0)
+  drawSheet(sheet, frame, x, y, {});     // (x, y) = 腳底中心
+  Fx.draw();
+  text('HP 6', 8, 8, { size: 8 });
+}
+
+window.addEventListener('load', async () => {
+  Display.init(document.getElementById('game'));
+  Input.init({ KeyJ: 'sword' });         // 覆寫/擴充按鍵
+  await loadAll(MANIFEST);
+  Screen.init();
+  TouchUI.showIn = ['play'];
+  TouchUI.setButtons([{ a: 'sword', label: '劍', tint: '#ffd45e', r: 42, dx: 0, dy: 0 }]);
+  TouchUI.init();
+  Loop.update = update;
+  Loop.render = render;
+  Loop.start();
+});
+```
+
+---
+
+## API 一覽
+
+### 核心
+| 檔案 | API |
+|---|---|
+| `util.js` | `GAME_W` / `GAME_H`、`U.clamp/rand/lerp/dist/overlap/seeded/pick`、`DIRV` |
+| `core.js` | **`G`**（canvas/ctx/scale/safe/view/state/time）、**`Display.init/layout/toWorld`**、**`Camera`**、**`Loop`** |
+| `assets.js` | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop`、`shadow()` |
+| `sprite.js` | `new Sprite(fps, loop)` → `.set/.update/.draw`、`.frame`、`.done` |
+| `input.js` | `Input.init(map)`、`isDown`、`justPressed`、`moveAxis()`、`touchAxis`、`endFrame()` |
+| `audio.js` | `Sfx.tone/noise`（合成）、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
+| `fx.js` | `Fx.burst/dust/spark/shake/hitstop/update/draw` |
+| `physics.js` | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds` |
+| `pathfind.js` | `Pathfind.build({ cell, w, h, pad })`、`.find(x1,y1,x2,y2)`、`.lineClear()` |
+| `save.js` | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |
+| `ui.js` | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
+| `touch.js` | `TouchUI.showIn / setButtons / extra`、`init/update/draw/resize`、`Screen`、`buzz()` |
+| `net.js` | `Net.connect/close/send/update`、`Net.remote`、`produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
+
+### 三個最常用的細節
+
+```js
+// 1) 鏡頭（捲動世界）
+Camera.follow(player, { x: 0, y: 0, w: 900, h: 620 });   // 平滑跟隨 + 邊界夾住
+Camera.apply(G.ctx, G.scale);                            // render 時套用
+Camera.visible(x, y, w, h);                              // 粗剔除，畫之前先問
+
+// 2) 固定時間步（決定性 / 連線 / 重播）
+Loop.fixedStep = 1 / 60;      // >0 啟用；落後時最多補跑 Loop.maxSteps 次
+
+// 3) 尋路（8 方向 A*，不切角、自動平滑）
+Pathfind.build({ cell: 8, w: WORLD.w, h: WORLD.h });      // 場地變了要重建
+const path = Pathfind.find(e.x, e.y, player.x, player.y); // [{x,y}, ...]
+if (path[0]) { /* 往 path[0] 走，到了就 shift() */ }
+```
+
+---
+
+## 效能（實測，Chromium headless）
+
+| 敵人數 | 桌機 render / update | 手機 render / update |
+|---|---|---|
+| 10 | 0.90 / 0.03 ms | 1.62 / 0.03 ms |
+| 60 | 1.24 / 0.09 ms | 4.18 / 0.08 ms |
+| 200 | 2.16 / 0.32 ms | 7.89 / 0.36 ms |
+
+- 60 fps 預算 16.6 ms，兩邊都還很寬；手機瓶頸是**地面 fill rate**，不是角色數
+- 引擎內建：靜態層預烘焙（`drawGround` 自己烤）、粒子物件池、字型快取、暗角貼圖
+- `F3` 除錯 overlay：fps / 每帧成本 / 自訂資訊 / 碰撞框
+
+---
+
+## 引擎幫你處理掉的坑
+
+1. **腳底對齊**：sprite sheet 高度不一（16/17/18/21/23px）→ 每格算 `foot`，換動作不抖
+2. **滿版縮放**：世界高度依螢幕比例生成、`cover` 不裁切、`G.safe`/`G.view` 自動內縮
+3. **白閃受擊**：`source-in` 預先合成白色剪影（沒有受擊動畫也能做打擊感）
+4. **靜態層預烘焙**：地面/暗角畫一次，每帧只 blit
+5. **觸控**：浮動搖桿、可設定按鈕、多點觸控、安全邊距、震動、全螢幕（含失敗提示）
+6. **背景分頁**：RAF 被暫停時用 timer 補跑（連線遊戲的房主必須）
+7. **區網**：`Net` 只負責傳輸與時序，快照內容由遊戲決定
+
+## 刻意不做的
+
+- 3D、等角視角、骨骼動畫、shader
+- 帶旋轉/斜坡/關節的物理（只有 AABB）
+- 視覺化編輯器、通用腳本語言
+- 3 人以上連線、rollback netcode
+
+需要上面這些 → 用 Godot / Unity / Phaser。
+這個引擎的定位：**一款 2D 像素小遊戲，從零到能玩，不用裝任何東西。**
+
+---
+
+## 依賴
+
+- 執行：任何支援 ES2017 + Canvas 2D 的瀏覽器（Chrome / Safari / Edge / Firefox）
+- 工具：`python tools/serve.py` 只需要 Python 3（區網中繼用標準庫實作）
+- 選用：`pip install segno`（產生 QR）、`pip install playwright`（跑測試）
+
+## 第一款正式遊戲
+
+[`tiny-arena`](../tiny-arena) —— 舉盾競技場：波次生存、整備三選一、陷阱、夥伴、區網兩人。
+它把 `engine/` 原封不動複製進去使用，可以當成「引擎實際長成什麼樣」的參考。

@@ -1,0 +1,138 @@
+# TinyEngine — 自製 2D 像素遊戲引擎（HTML5 Canvas）
+
+給「**16×16 俯視像素、單一螢幕、動作遊戲**」用的極簡引擎。
+沒有依賴、沒有 build、沒有編輯器 —— 全部就是幾支 JS 檔，複製資料夾就能在新專案用。
+
+> 這不是通用引擎。刻意的取捨：**只做一種遊戲做得好**，其他一律不做。
+
+---
+
+## 檔案與 API
+
+| 檔案 | 負責 | 主要 API |
+|---|---|---|
+| `util.js` | 世界尺寸、小工具、方向表 | `GAME_W` / `GAME_H`、`U.clamp/rand/lerp/dist/overlap/seeded`、`DIRV` |
+| `core.js` | App 物件、畫面配置、主迴圈 | `G`（canvas/ctx/scale/safe/view/state/time）、`Display.init/layout/toWorld`、`Loop.start/toggleDebug` |
+| `assets.js` | 資源載入、sprite sheet 分析 | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop(def, ...)`、`shadow()` |
+| `sprite.js` | 動畫播放器 | `new Sprite(fps, loop)` → `.set(sheet, fps, loop)`、`.update(dt)`、`.draw(x, y, opt)`、`.frame`、`.done` |
+| `input.js` | 鍵盤 → 動作 | `Input.init(map)`（沒給就用預設 WASD/方向鍵/Enter/Escape/F3）、`isDown(a)`、`justPressed(a)`、`moveAxis()`、`touchAxis`、`endFrame()` |
+| `audio.js` | WebAudio 合成音效 | `Sfx.unlock()`、`tone()`、`noise()`、`Sfx.register({...})` |
+| `fx.js` | 粒子 / 震動 / hitstop | `Fx.burst/dust/spark/shake/hitstop/update/draw/reset` |
+| `physics.js` | AABB 碰撞 | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)` |
+| `ui.js` | 文字與面板 | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
+| `touch.js` | 手機觸控 + 全螢幕 | `TouchUI.init/update/draw/resize`、`TouchUI.showIn`、`TouchUI.setButtons([...])`、`TouchUI.extra`（情境按鈕）、`Screen.init`、`buzz()` |
+| `net.js` | 區網連線（房主權威） | `Net.connect/close/send/update`、`Net.remote`（加入端輸入）、`Net.produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
+
+**約定**：`G` 是引擎的全域 App 物件，`GAME_W` / `GAME_H` 是世界尺寸。遊戲自己的狀態請另開物件（範例用 `GS`），不要塞進 `G`。
+
+---
+
+## 用這個引擎開新遊戲（最小骨架）
+
+```html
+<!-- index.html -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<canvas id="game"></canvas><canvas id="ui"></canvas>
+<script src="game/manifest.js"></script>
+<script src="engine/util.js"></script>
+<script src="engine/core.js"></script>
+<script src="engine/assets.js"></script>
+<script src="engine/sprite.js"></script>
+<script src="engine/input.js"></script>
+<script src="engine/audio.js"></script>
+<script src="engine/fx.js"></script>
+<script src="engine/physics.js"></script>
+<script src="engine/ui.js"></script>
+<script src="engine/touch.js"></script>
+<script src="engine/net.js"></script>
+<script src="game/main.js"></script>
+```
+
+```js
+// game/main.js
+GAME_W = 320;          // 想改世界寬度就在載入前覆寫（util.js 的預設是 480）
+
+const GS = { things: [] };
+
+function update(dt) {
+  const mv = Input.moveAxis();                    // 8 方向 / 搖桿連續角度
+  if (mv.x) player.x += mv.x * 60 * dt;
+  Physics.moveAxis(player, dx, dy, { bw: 8, bh: 6, by: -6 });
+  if (Input.justPressed('sword')) Sfx.swing();
+  Fx.update(dt);
+}
+
+function render() {
+  const ctx = G.ctx;
+  ctx.setTransform(G.scale, 0, 0, G.scale, 0, 0);
+  drawSheet(pgSheet, 0, player.x, player.y, {});   // (x, y) = 腳底中心，自動對齊
+  Fx.draw();
+  text('HP 6', 8, 8, { size: 8 });
+}
+
+window.addEventListener('load', async () => {
+  Display.init(document.getElementById('game'));
+  Input.init({ KeyJ: 'sword', KeyK: 'bow' });      // 覆寫/擴充引擎預設按鍵
+  await loadAll(myManifest);                       // 也可用 window.MANIFEST
+  Screen.init();
+  TouchUI.showIn = ['play'];                       // 哪個 state 顯示觸控層
+  TouchUI.setButtons([                             // 按鈕由遊戲定義
+    { a: 'sword', label: '劍', tint: '#ffd45e', r: 42, dx: 0, dy: 0 },
+    { a: 'bow', label: '弓', tint: '#8fe36a', r: 27, dx: -66, dy: -10 },
+  ]);
+  TouchUI.init();                                  // 桌機會自動略過
+  Loop.update = update;
+  Loop.render = render;
+  Loop.start();
+});
+```
+
+---
+
+## 用模板開新專案（建議）
+
+```bash
+cd tiny-arena
+python tools/new_project.py ../我的新遊戲 --title "我的新遊戲"
+cd ../我的新遊戲 && python tools/serve.py
+```
+
+會複製 `engine/` + `templates/project/`（index.html、game/ 骨架、tools/）+ `assets/`，
+產生的專案**完全獨立**。只要改 `game/game.js`。
+
+## 已驗證：可跑的最小範例
+
+```
+templates/minimal/     ← 只用到 engine/，沒有任何 game/ 的程式
+  index.html             ~40 行
+  game.js                ~150 行：8 方向移動、吃金幣、石頭碰撞、F3 除錯
+```
+
+開 `http://<你的IP>:8766/templates/minimal/` 就能玩。
+**這就是「新遊戲可以直接用這個引擎」的證明** —— 複製 `engine/` + 寫一支 game.js 就有遊戲。
+
+---
+
+## 引擎幫你處理掉的事（都是踩過的坑）
+
+1. **腳底對齊**：sprite sheet 高度不一（16/17/18/21/23px），`gen_manifest` 算好 `foot`，所有動畫同一個錨點 → 換動作不抖。
+2. **白色剪影**：`source-in` 預先合成，沒有受擊動畫也能閃白。
+3. **滿版縮放**：`Display.layout()` 依螢幕比例算世界高度，`cover` 鋪滿但限制裁切；`G.safe`（被裁掉多少）、`G.view`（可活動範圍）。
+4. **靜態層預烘焙**：地面與暗角畫一次到離屏 canvas，每帧只 blit（實測 render 快 3～5 倍）。
+5. **粒子物件池 + 字型快取**。
+6. **觸控**：浮動搖桿、圓形按鈕、多點觸控、安全邊距、震動、全螢幕按鈕與失敗提示。
+7. **背景分頁不中斷**：RAF 被暫停時用 timer 補跑（區網房主必須持續送狀態）。
+8. **區網**：`Net` 只負責傳輸與時序，快照內容由遊戲決定（`produceSnapshot` / `onSnapshot`）。
+9. **除錯 overlay**：`F3` → fps / 每帧成本 / 自訂資訊 / 碰撞框。
+
+---
+
+## 引擎不提供什麼（刻意的）
+
+- 3D、骨骼動畫、粒子編輯器
+- 完整物理（剛體、關節、四元數）
+- 視覺化關卡編輯器 / IDE
+- 通用腳本語言
+
+需要這些就該用 Godot / Unity / Phaser，不要自己養。
+這個引擎的定位是：**一款 2D 像素小遊戲，從零到能玩，不用裝任何東西。**
