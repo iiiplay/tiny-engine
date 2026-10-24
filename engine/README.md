@@ -12,13 +12,15 @@
 | 檔案 | 負責 | 主要 API |
 |---|---|---|
 | `util.js` | 世界尺寸、小工具、方向表 | `GAME_W` / `GAME_H`、`U.clamp/rand/lerp/dist/overlap/seeded`、`DIRV` |
-| `core.js` | App 物件、畫面配置、主迴圈 | `G`（canvas/ctx/scale/safe/view/state/time）、`Display.init/layout/toWorld`、`Loop.start/toggleDebug` |
+| `core.js` | App 物件、畫面配置、主迴圈、鏡頭 | `G`（canvas/ctx/scale/safe/view/state/time）、`Display.init/layout/toWorld`、`Loop.start/step/fixedStep/toggleDebug`、`Camera.follow/apply/visible/toScreen` |
 | `assets.js` | 資源載入、sprite sheet 分析 | `loadAll(manifest, onProgress)`、`sheetOf(def)`、`assetDef(src, frames, foot)`、`drawSheet(s, frame, x, y, opt, ctx)`、`drawCrop(def, ...)`、`shadow()` |
 | `sprite.js` | 動畫播放器 | `new Sprite(fps, loop)` → `.set(sheet, fps, loop)`、`.update(dt)`、`.draw(x, y, opt)`、`.frame`、`.done` |
 | `input.js` | 鍵盤 → 動作 | `Input.init(map)`（沒給就用預設 WASD/方向鍵/Enter/Escape/F3）、`isDown(a)`、`justPressed(a)`、`moveAxis()`、`touchAxis`、`endFrame()` |
-| `audio.js` | WebAudio 合成音效 | `Sfx.unlock()`、`tone()`、`noise()`、`Sfx.register({...})` |
+| `audio.js` | WebAudio 合成音效 + 音檔 | `Sfx.tone/noise`、`Sfx.register({...})`、`Sfx.play(name)`、`Sfx.loadClip/playClip`、`Sfx.loadMusic/playMusic/stopMusic` |
 | `fx.js` | 粒子 / 震動 / hitstop | `Fx.burst/dust/spark/shake/hitstop/update/draw/reset` |
-| `physics.js` | AABB 碰撞 | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)` |
+| `physics.js` | AABB 碰撞 | `Physics.add/clear/hit/overlap/moveAxis(e, dx, dy, opt)`、`Physics.bounds`（活動邊界，捲動世界必設） |
+| `pathfind.js` | 格子 A* | `Pathfind.build({cell,w,h,pad})`、`.find(x1,y1,x2,y2)`、`.lineClear()`、`.smooth()` |
+| `save.js` | 存檔 / 排行榜 | `Save.get/set/del/reset`、`Save.addScore(board, score)`、`Save.scores(board)` |
 | `ui.js` | 文字與面板 | `text()`（字型快取）、`hudPanel()`、`panel()`、`inRect()`、`UI` |
 | `touch.js` | 手機觸控 + 全螢幕 | `TouchUI.init/update/draw/resize`、`TouchUI.showIn`、`TouchUI.setButtons([...])`、`TouchUI.extra`（情境按鈕）、`Screen.init`、`buzz()` |
 | `net.js` | 區網連線（房主權威） | `Net.connect/close/send/update`、`Net.remote`（加入端輸入）、`Net.produceSnapshot / onSnapshot / onDrop / onReady / onHello` |
@@ -113,6 +115,40 @@ templates/minimal/     ← 只用到 engine/，沒有任何 game/ 的程式
 
 ---
 
+## 常用配方
+
+```js
+// 捲動世界（世界比畫面大）
+Physics.bounds = { l: 8, r: WORLD.w - 8, t: 8, b: WORLD.h - 8 };
+Pathfind.build({ cell: 8, w: WORLD.w, h: WORLD.h });
+Camera.follow(player, { x: 0, y: 0, w: WORLD.w, h: WORLD.h });
+// render 內：
+Camera.apply(G.ctx, G.scale);
+if (Camera.visible(x, y, w, h)) { /* 只畫看得到的 */ }
+
+// 固定時間步（決定性 / 連線 / 重播）
+Loop.fixedStep = 1 / 60;
+
+// A* 追擊
+c.repathT -= dt;
+if (c.repathT <= 0) {
+  c.repathT = 0.45;
+  c.path = Pathfind.lineClear(c.x, c.y, p.x, p.y) ? [{ x: p.x, y: p.y }]
+                                                  : Pathfind.find(c.x, c.y, p.x, p.y);
+}
+if (c.path[0]) { /* 往 c.path[0] 走；到了就 shift() */ }
+
+// 存檔 / 排行榜
+Save.set('unlocked', 3);
+const r = Save.addScore('best-time', -seconds, { max: 5 });   // 越小越好用負數
+if (r.isRecord) text('新紀錄！', ...);
+
+// 音檔（不想用合成音效時）
+await Sfx.loadClips({ hit: 'assets/sfx/hit.wav' });
+Sfx.playClip('hit', { rate: 1.2 });
+Sfx.loadMusic('assets/bgm.mp3', { loop: true }); Sfx.playMusic();
+```
+
 ## 引擎幫你處理掉的事（都是踩過的坑）
 
 1. **腳底對齊**：sprite sheet 高度不一（16/17/18/21/23px），`gen_manifest` 算好 `foot`，所有動畫同一個錨點 → 換動作不抖。
@@ -124,6 +160,10 @@ templates/minimal/     ← 只用到 engine/，沒有任何 game/ 的程式
 7. **背景分頁不中斷**：RAF 被暫停時用 timer 補跑（區網房主必須持續送狀態）。
 8. **區網**：`Net` 只負責傳輸與時序，快照內容由遊戲決定（`produceSnapshot` / `onSnapshot`）。
 9. **除錯 overlay**：`F3` → fps / 每帧成本 / 自訂資訊 / 碰撞框。
+10. **捲動鏡頭**：`Camera.follow()` 平滑跟隨 + 邊界夾住 + `visible()` 剔除。
+11. **固定時間步**：`Loop.fixedStep`，落後時最多補跑 `maxSteps` 次，不會雪崩。
+12. **A\* 尋路**：格子化 `Physics.solids`，8 方向不切角、路徑平滑、可直線就不繞路。
+13. **存檔 / 排行榜**：localStorage，無痕模式會安靜失敗（不會炸）。
 
 ---
 
