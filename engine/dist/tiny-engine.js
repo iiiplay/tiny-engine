@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.3.0';
+const TINY_ENGINE_VERSION = '1.3.1';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -1143,12 +1143,14 @@ const Save = {
   },
 
   /* 存檔版本升級：migrations = { 0: (data)=>…, 1: … }（key 是「舊版號」）
-     回傳升級後的資料；沒有存檔時回傳 def。 */
-  migrate(key, version, migrations, def) {
+     回傳升級後的資料；沒有存檔時回傳 def。
+     有升級過就順手寫回（避免每次載入都重跑；opt.write=false 可關）。 */
+  migrate(key, version, migrations, def, opt) {
     const raw = this.get(key, null);
     if (!raw) return def === undefined ? null : def;
     let v = raw.version != null ? raw.version : (raw.v != null ? raw.v : 0);
     let data = raw;
+    let changed = false;
     let guard = 0;
     while (v < version && guard++ < 50) {
       const fn = migrations && migrations[v];
@@ -1157,9 +1159,11 @@ const Save = {
       if (out) data = out;
       v = (data.version != null) ? data.version : v + 1;
       data.version = v;
+      changed = true;
     }
     data.version = v;
     data.v = v;
+    if (changed && !(opt && opt.write === false)) this.set(key, data);
     return data;
   },
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.1 — 2026-10-24
+
+> 修 desktop-hero 實際接入時抓到的問題（v1.3.0 發版後 1 小時內）
+
+### 修正
+- `Save.migrate()`：升級後**沒有寫回**存檔，導致每次載入都重跑遷移、版本號永遠停在舊的
+  · 現在只要跑過遷移就 `set()` 寫回；`Save.migrate(key, ver, map, def, { write:false })` 可關
+  · 實測：v1 存檔（`{v:1, gold:77, lvl:3}`）載入後 → 存檔版本變 2、資料正確
+- `TINY_ENGINE_VERSION` 改由 util.js 提供並同步版號（`'1.3.1'`）
+
+### 驗證
+- `tools/v13.py` PASS、`tools/shot.py` PASS、bench 60fps
+- desktop-hero 接入：離線 2 小時 → +90 金、專注模式 renderRate 4、v1→v2 遷移通過
+
 ## v1.3.0 — 2026-10-24
 
 > 主題：**把「桌寵／掛機／小卡片」需要的東西補進引擎**（來自 desktop-hero 專案的實戰需求）

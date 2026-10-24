@@ -78,12 +78,14 @@ const Save = {
   },
 
   /* 存檔版本升級：migrations = { 0: (data)=>…, 1: … }（key 是「舊版號」）
-     回傳升級後的資料；沒有存檔時回傳 def。 */
-  migrate(key, version, migrations, def) {
+     回傳升級後的資料；沒有存檔時回傳 def。
+     有升級過就順手寫回（避免每次載入都重跑；opt.write=false 可關）。 */
+  migrate(key, version, migrations, def, opt) {
     const raw = this.get(key, null);
     if (!raw) return def === undefined ? null : def;
     let v = raw.version != null ? raw.version : (raw.v != null ? raw.v : 0);
     let data = raw;
+    let changed = false;
     let guard = 0;
     while (v < version && guard++ < 50) {
       const fn = migrations && migrations[v];
@@ -92,9 +94,11 @@ const Save = {
       if (out) data = out;
       v = (data.version != null) ? data.version : v + 1;
       data.version = v;
+      changed = true;
     }
     data.version = v;
     data.v = v;
+    if (changed && !(opt && opt.write === false)) this.set(key, data);
     return data;
   },
 

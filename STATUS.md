@@ -1,6 +1,6 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.3.0**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-24　版本：**v1.3.1**　repo：https://github.com/iiiplay/tiny-engine （private）
 
 ## 這是什麼
 
@@ -41,6 +41,7 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 | **v1.3** 固定邏輯尺寸版面 `Display.fit`（小卡片／桌寵） | ✅ | v13 demo 480×270 卡片 |
 | **v1.3** 音量 `Sfx.setMaster` / `Sfx.mute` | ✅ | 靜音時 gain 歸零 |
 | **v1.3** 單檔打包 `tools/pack.py` → `engine/dist/tiny-engine.js` | ✅ | 73.5KB、`node --check`、`--check` 同步 |
+| **v1.3.1** `Save.migrate` 升級後寫回（desktop-hero 接入時發現） | ✅ | v1 存檔 → 版本變 2、資料正確 |
 | 除錯 overlay `F3`（fps/ms/自訂資訊/碰撞框） | ✅ | 各 demo |
 | `tools/serve.py`（自動挑埠、QR、`/ws` 中繼、no-store） | ✅ | 兩個專案共用 |
 | `tools/new_project.py`（一行開新專案） | ✅ | 產生的專案實跑 |
