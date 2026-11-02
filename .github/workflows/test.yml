@@ -37,8 +37,8 @@ jobs:
             python -c "import ast,sys; ast.parse(open('$f',encoding='utf-8').read())"
           done
 
-      - name: 輸入／時間步／Slot 規則回歸測試
-        run: node --test tests/runtime.test.cjs tests/slot.test.cjs
+      - name: 引擎與規則 Node 回歸測試
+        run: node --test
 
       - name: 安裝 Playwright
         run: |
@@ -80,6 +80,9 @@ jobs:
 
       - name: 區網連線（兩個分頁：房主 + 加入端）
         run: python tools/nettest.py http://localhost:8766/demo/net.html
+
+      - name: 區網連線（四人、座位驗證與重連）
+        run: python tests/net-browser.py http://localhost:8766/demo/net.html
 
       - name: v1.3 驗收（Scene / UI / 離線 / 節流）
         run: python tools/v13.py http://localhost:8766/demo/v13.html

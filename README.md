@@ -263,12 +263,12 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 
 1. 所有 `engine/*.js`、`demo/*.js` 的 `node --check`
 2. 所有工具的 Python 語法檢查
-3. `node --test tests/runtime.test.cjs`（單次按鍵／多鍵／背景時間／時鐘交接）
+3. `node --test`（全部模組、輸入／時間步及 Slot 規則）
 4. `tools/pack.py --check`（單檔產物與來源同步）
 5. `tests/tool_failures.py`（注入 console.error／頁面例外，確認驗收回傳失敗）
 6. 起伺服器 → `tools/shot.py`、`tools/soak.py`（冒煙測試與亂走 8 秒）
 7. `tools/runtime.py`（1280×720 桌面、375×667 手機：雙鍵／觸控／搖桿可見）
-8. `tools/nettest.py`、`tools/v13.py`～`tools/v16.py`（雙端連線與全部版本驗收）
+8. `tools/nettest.py`、`tests/net-browser.py`、`tools/v13.py`～`tools/v16.py`（雙端、四人連線與版本驗收）
 9. `tools/bench.py`（大地圖 + 剔除，**fps < 45 或瀏覽器錯誤就失敗**）
 
 驗收腳本遇到 JS 例外、`console.error` 或偵測到的載入失敗時回傳非零 exit code。
