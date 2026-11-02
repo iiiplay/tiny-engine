@@ -84,8 +84,22 @@ const Pathfind = {
     const gScore = new Float32Array(N).fill(Infinity);
     const fScore = new Float32Array(N).fill(Infinity);
     const came = new Int32Array(N).fill(-1);
-    const open = [idx(s0.x, s0.y)];
-    const inOpen = new Uint8Array(N);
+    const start = idx(s0.x, s0.y);
+    const open = [];
+    // Entries retain their priority; stale entries are discarded after pop.
+    // Search state is local so callbacks can safely invoke find recursively.
+    const push = (node, score) => {
+      const item = { node, score }; let i = open.length; open.push(item);
+      while (i > 0) { const parent = (i - 1) >> 1; if (open[parent].score <= score) break; open[i] = open[parent]; i = parent; }
+      open[i] = item;
+    };
+    const pop = () => {
+      const first = open[0], last = open.pop();
+      if (open.length) { let i = 0; while (true) { let c = i * 2 + 1; if (c >= open.length) break;
+        if (c + 1 < open.length && open[c + 1].score < open[c].score) c++;
+        if (open[c].score >= last.score) break; open[i] = open[c]; i = c; } open[i] = last; }
+      return first.node;
+    };
     const closed = new Uint8Array(N);
     const goal = idx(t0.x, t0.y);
     const h = (i) => {
@@ -93,20 +107,17 @@ const Pathfind = {
       const dx = Math.abs(x - t0.x), dy = Math.abs(y - t0.y);
       return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy);   // octile
     };
-    gScore[open[0]] = 0;
-    fScore[open[0]] = h(open[0]);
-    inOpen[open[0]] = 1;
+    gScore[start] = 0;
+    fScore[start] = h(start);
+    push(start, fScore[start]);
 
     const NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
                 [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
     let nodes = 0;
 
     while (open.length && nodes < maxNodes) {
-      /* 取 f 最小的（節點數不多，線性掃描就夠） */
-      let bi = 0;
-      for (let i = 1; i < open.length; i++) if (fScore[open[i]] < fScore[open[bi]]) bi = i;
-      const cur = open.splice(bi, 1)[0];
-      inOpen[cur] = 0;
+      const cur = pop();
+      if (closed[cur]) continue;
       if (cur === goal) return this.trace(came, cur, x2, y2);
       closed[cur] = 1;
       nodes++;
@@ -124,7 +135,7 @@ const Pathfind = {
           gScore[ni] = g;
           fScore[ni] = g + h(ni);
           came[ni] = cur;
-          if (!inOpen[ni]) { open.push(ni); inOpen[ni] = 1; }
+          push(ni, fScore[ni]);
         }
       }
     }
