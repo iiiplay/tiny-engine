@@ -1,6 +1,8 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-25　版本：**v1.8.1**（本機工作區；尚未提交／推送）　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-11-02　版本：**v1.9.0 候選**（本機功能分支，待獨立驗收與核准合併）　repo：https://github.com/iiiplay/tiny-engine （private）
+
+v1.9 功能、使用方式與相容性見 `CHANGELOG.md` 及 `docs/v19-compatibility.md`；以下保留 v1.8.1 歷史記錄。
 
 ## v1.8.1 穩定性整理
 

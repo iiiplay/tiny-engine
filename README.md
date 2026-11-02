@@ -182,6 +182,12 @@ drawSprite(img, sx, sy, sw, sh, dx, dy, sw, sh, { rot: t, pivot: { x: px, y: py 
 
 ---
 
+## v1.9 新增功能
+
+可用 `Grid.setCosts`、`findPath`、`weightedField` 計算帶地形成本的路徑；`Level.grid({costs})` 與 `LevelLib.share` 提供關卡支援。`Display.fit(..., {smooth:true})` 和繪圖選項 `smooth` 可選平滑，預設仍為像素風。編輯器復原支援標記與物件；`Sfx` 加入歌單和淡入淡出，`UI` 提供拉桿與混音器。區網中繼支援一位房主與三位加入者，`Net.autoReconnect` 預設為 false。
+
+各 API、行為變化和網路信任限制見 [v1.9 相容性](docs/v19-compatibility.md)。
+
 ## 區網 demo（2 人）
 
 `demo/net.html`：房主權威 + 加入端瘦客戶端的最小範例。
@@ -297,7 +303,7 @@ v1.6 工具測試自行產生圖片與遊戲程式，不依賴相鄰遊戲專案
 - 3D、等角視角、骨骼動畫、shader
 - 帶旋轉/斜坡/關節的物理（只有 AABB）
 - 視覺化編輯器、通用腳本語言
-- 3 人以上連線、rollback netcode
+- rollback netcode
 
 需要上面這些 → 用 Godot / Unity / Phaser。
 這個引擎的定位：**一款 2D 像素小遊戲，從零到能玩，不用裝任何東西。**

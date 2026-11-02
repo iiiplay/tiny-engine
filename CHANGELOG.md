@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.9.0 — 2026-11-02
+
+以 v1.8.1 為基礎，參考 `D:/gemini/tiny-engine` v1.9 逐項選擇與改寫；未採用該版 iso、展示素材或打包產物。
+
+- Grid 新增加權路徑、轉向成本、距離場與可通行成本；Pathfind 以獨立狀態的最小堆尋路。Fx 回收使用 swap-and-pop。
+- Edit 完整復原格子／標記／物件、繪製標記與物件、限制指標攔截範圍；Level 支援成本與分享碼。
+- Display 與 sprite 新增可選 smooth；Sfx 加入音量偏好、曲目、歌單和淡入淡出；UI 加入滑桿、混音及關卡選單。
+- Net 支援房主與最多三位加入者；中繼伺服器配置座位、覆寫傳入 input id，重連預設關閉。
+
+### 相容性
+
+- `Grid.downhill` 的對角線不能再切穿阻擋角；距離上限改為 Infinity。設定成本的非零 tile 現在可走並計入 `countFree`；未設定成本的既有地圖維持原牆壁語意，`countFree` 仍不計臨時 block callback。加權搜尋支援小於 1 的正成本，使用零啟發式確保最短成本，會受 `maxNodes` 限制。
+- `Pathfind.find` 同分路徑順序可能改變，但搜尋狀態每次獨立，可重入；Fx 存活粒子繪製順序可能因 swap-and-pop 改變。
+- Edit 復原包含 meta 與 objects；編輯區外 pointerdown 不再攔截；標記可用右鍵清除；色盤寬度會依項目數調整。
+- Display.fit 會保存設定供 resize 使用，`smooth` 預設 false；個別 sprite 繪製後還原 smoothing。
+- `Sfx.setMusicVolume` 保持直接設定元素音量，`setMaster` 不改變既有音檔音量；新 `setSfx` 控制合成與檔案音效，`setBgm` 更新音樂音量。新淡入淡出需呼叫 `Sfx.update`，引擎 Loop 已接入。靜音切換後音樂恢復最近設定音量（舊版恢復 `musicGain`）。
+- `UI.bind` 現會執行熱區的 `onClick`／slider callback 並呼叫原有 `onAct`；拖曳至 pointerup／cancel／leave 結束。
+- `Net.remote` 保留第一位加入者別名，`onReady` 可收到座位，`status` 增加 `playing`／`reconnecting`，額滿會拒絕而非覆蓋現有連線；斷線重連須明確啟用。新協定由中繼覆寫加入端 id，必須搭配新版 `tools/serve.py`；房號／clientId 不是認證，不應暴露到不可信網路。
+
+詳細使用方式、限制與驗證見 `docs/v19-compatibility.md`。
+
 ## v1.8.1 — 2026-10-25
 
 ### 可玩 Sprite 展示

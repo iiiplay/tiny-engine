@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.8.1';
+const TINY_ENGINE_VERSION = '1.9.0';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -55,6 +55,7 @@ const Display = {
   /* 依螢幕比例決定場地高度（不裁切），並把畫布鋪滿螢幕 */
   layout() {
     if (!G.canvas) return;
+    if (this._fitOpt) { this.fit(G.canvas, this._fitOpt); return; }
     const W = innerWidth, H = innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
 
@@ -103,6 +104,7 @@ const Display = {
      回傳實際使用的 cssScale。 */
   fit(canvas, opt) {
     opt = opt || {};
+    this._fitOpt = { ...opt };
     const w = opt.w || GAME_W;
     const h = opt.h || GAME_H;
     GAME_W = w;
@@ -123,12 +125,13 @@ const Display = {
     canvas.height = Math.round(h * G.scale);
     G.canvas = canvas;
     G.ctx = canvas.getContext('2d');
-    G.ctx.imageSmoothingEnabled = false;
+    G.ctx.imageSmoothingEnabled = !!opt.smooth;
     G.ctx.textRendering = 'geometricPrecision';
     return s;
   },
 
   init(canvas) {
+    this._fitOpt = null;
     G.canvas = canvas;
     G.ctx = canvas.getContext('2d');
     G.ctx.imageSmoothingEnabled = false;
@@ -366,6 +369,7 @@ const Loop = {
     /* 引擎子系統：觸控狀態合併、區網收送 */
     if (typeof TouchUI !== 'undefined' && TouchUI.enabled) TouchUI.update();
     if (typeof Net !== 'undefined' && Net.active) Net.update(d);
+    if (typeof Sfx !== 'undefined' && Sfx.update) Sfx.update(d);
     Fx.update(d);
     if (this.update) this.update(d);
     Input.endFrame();
@@ -540,11 +544,14 @@ function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt) {
   const h = dh == null ? sh : dh;
   const fx = !!o.flipX, fy = !!o.flipY, rot = o.rot || 0;
   const a = o.alpha;
+  const oldSmooth = ctx.imageSmoothingEnabled;
+  if (o.smooth != null) ctx.imageSmoothingEnabled = !!o.smooth;
   if (a != null) ctx.globalAlpha = a;
 
   // 最常見的情況：什麼都不變 → 直接畫
   if (!fx && !fy && !rot) {
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, w, h);
+    if (o.smooth != null) ctx.imageSmoothingEnabled = oldSmooth;
     if (a != null) ctx.globalAlpha = 1;
     return;
   }
@@ -558,6 +565,7 @@ function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt) {
   if (fx || fy) ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
   ctx.drawImage(img, sx, sy, sw, sh, dx - pv.x, dy - pv.y, w, h);
   ctx.restore();
+  if (o.smooth != null) ctx.imageSmoothingEnabled = oldSmooth;
   if (a != null) ctx.globalAlpha = 1;
 }
 
@@ -577,7 +585,7 @@ function drawSheet(s, frame, x, y, o, target) {
   drawSprite(img, (frame | 0) * fw, 0, fw, fh,
     px, py, Math.ceil(fw * sc), Math.ceil(fh * sc), {
       flipX: o.flipX, flipY: o.flipY, rot: o.rot,
-      pivot: o.pivot,
+      pivot: o.pivot, smooth: o.smooth,
       alpha: o.alpha, target: ctx,
     });
 }
@@ -773,12 +781,16 @@ const Input = {
 
 /* ---- engine/audio.js ---- */
 /* ============================================================
-   engine/audio.js — WebAudio 即時合成（不需音檔）+ 音效註冊表
+   engine/audio.js — WebAudio 即時合成 + 音效註冊表 + BGM 排程/淡入淡出
+   v1.9：新增 setSfx / setBgm / savePrefs / loadPrefs、
+         BGM 歌單 playlist / nextTrack、淡入淡出 fadeMusic / crossfade
    ============================================================ */
 
 const Sfx = {
   ctx: null,
   master: 0.5,
+  sfxVol: 1,
+  bgmVol: 0.5,
   muted: false,
   unlock() {
     if (!this.ctx) {
@@ -797,25 +809,59 @@ const Sfx = {
   setMaster(v) {
     this.master = Math.max(0, Math.min(1, v));
     if (this.gain) this.gain.gain.value = this.muted ? 0 : this.master;
+    this._applyMusicVol();
+    return this;
+  },
+  /* 音效音量（0..1）：同時控制合成音效與音檔 clipGain */
+  setSfx(v) {
+    this.sfxVol = Math.max(0, Math.min(1, v));
+    this.clipGain = 0.8 * this.sfxVol;
+    return this;
+  },
+  /* BGM 音量（0..1）：同時更新 musicGain 與播放中的音樂 */
+  setBgm(v) {
+    this.bgmVol = Math.max(0, Math.min(1, v));
+    this.musicGain = this.bgmVol;
+    this._trackVol = this.musicGain;
+    this._applyMusicVol();
     return this;
   },
   /* 靜音切換：Sfx.mute(true) / Sfx.mute() 反轉 / Sfx.mute(false) */
   mute(on) {
     this.muted = (on == null) ? !this.muted : !!on;
     if (this.gain) this.gain.gain.value = this.muted ? 0 : this.master;
-    if (this.music) this.music.volume = this.muted ? 0 : this.musicGain;
+    this._applyMusicVol();
     return this.muted;
+  },
+  /* 存取音量偏好（搭配 Save） */
+  savePrefs(key) {
+    if (typeof Save === 'undefined') return this;
+    Save.set(key || 'te-audio', {
+      master: this.master, sfx: this.sfxVol, bgm: this.bgmVol, muted: this.muted,
+    });
+    return this;
+  },
+  loadPrefs(key) {
+    if (typeof Save === 'undefined') return this;
+    const d = Save.get(key || 'te-audio', null);
+    if (!d) return this;
+    if (d.master != null) this.setMaster(d.master);
+    if (d.sfx != null) this.setSfx(d.sfx);
+    if (d.bgm != null) this.setBgm(d.bgm);
+    if (d.muted != null) this.mute(d.muted);
+    return this;
   },
   tone(f0, f1, dur, type = 'square', vol = 0.25, delay = 0) {
     if (!this.ctx || this.muted) return;
     const t = this.ctx.currentTime + delay;
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
+    const peak = Math.max(0.0002, vol * this.sfxVol);
     o.type = type;
     o.frequency.setValueAtTime(f0, t);
     if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.linearRampToValueAtTime(peak, t + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.gain);
     o.start(t); o.stop(t + dur + 0.02);
@@ -831,7 +877,7 @@ const Sfx = {
     src.buffer = buf;
     const bp = this.ctx.createBiquadFilter();
     bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 0.9;
-    const g = this.ctx.createGain(); g.gain.value = vol;
+    const g = this.ctx.createGain(); g.gain.value = vol * this.sfxVol;
     src.connect(bp); bp.connect(g); g.connect(this.gain);
     src.start(t);
   },
@@ -839,9 +885,21 @@ const Sfx = {
      Sfx.loadClip('hit', 'assets/sfx/hit.wav') → Sfx.playClip('hit', {rate:1.2})
      Sfx.loadMusic('assets/music/bgm.mp3')     → Sfx.playMusic() / stopMusic() */
   clips: {},
+  tracks: {},             // name -> { src, volume, loop }
+  currentTrack: null,     // 目前曲名或 src
   music: null,
   musicGain: 0.5,
   clipGain: 0.8,
+  _trackVol: 1,           // 單曲相對音量
+  _fadeVal: 1,            // 淡入淡出倍率（0..1）
+  _fadeFrom: 1,
+  _fadeTo: 1,
+  _fadeT: 0,
+  _fadeDur: 0,
+  _fadeNext: null,        // crossfade 淡出後要接的 { target, dur, opt }
+  _playlist: [],
+  _playIdx: 0,
+  _playOpt: {},
 
   loadClip(name, src) {
     return new Promise((res) => {
@@ -864,32 +922,157 @@ const Sfx = {
     opt = opt || {};
     try {
       const a = base.cloneNode(true);
-      a.volume = Math.min(1, (opt.volume != null ? opt.volume : 1) * this.clipGain);
+      const eff = (opt.volume != null ? opt.volume : 1) * this.clipGain;
+      a.volume = Math.max(0, Math.min(1, eff));
       a.playbackRate = opt.rate || 1;
       a.play().catch(() => {});
       return a;
     } catch (e) { return null; }
   },
 
-  loadMusic(src, opt) {
+  /* 註冊多首 BGM：Sfx.addTracks({ camp: 'bgm1.wav', boss: { src: 'bgm2.wav', volume: 0.8 } }) */
+  addTracks(map) {
+    for (const k in map) {
+      const v = map[k];
+      this.tracks[k] = typeof v === 'string'
+        ? { src: v, volume: 1, loop: true }
+        : { src: v.src, volume: v.volume != null ? v.volume : 1, loop: v.loop !== false };
+    }
+    return this;
+  },
+
+  _applyMusicVol() {
+    if (!this.music) return;
+    if (this.muted) { this.music.volume = 0; return; }
+    const v = this._trackVol * this._fadeVal;
+    this.music.volume = Math.max(0, Math.min(1, v));
+  },
+
+  loadMusic(srcOrName, opt) {
     opt = opt || {};
+    const reg = this.tracks[srcOrName];
+    const src = reg ? reg.src : srcOrName;
     const a = new Audio();
     a.src = src;
-    a.loop = opt.loop !== false;
-    a.volume = Math.min(1, (opt.volume != null ? opt.volume : 1) * this.musicGain);
+    a.loop = opt.loop != null ? opt.loop : (reg ? reg.loop !== false : true);
+    this._trackVol = (opt.volume != null ? opt.volume : (reg && reg.volume != null ? reg.volume : 1)) * this.musicGain;
+    this._fadeVal = opt.fadeIn ? 0 : 1;
     a.preload = 'auto';
+    a.onended = () => {
+      if (!a.loop && this._playlist.length) this.nextTrack();
+    };
     this.music = a;
+    this.currentTrack = srcOrName;
+    this._applyMusicVol();
+    if (opt.fadeIn) this.fadeMusic(1, opt.fadeIn);
     return a;
   },
 
-  playMusic() {
+  playMusic(nameOrSrc, opt) {
+    if (nameOrSrc && nameOrSrc !== this.currentTrack) {
+      this.stopMusic();
+      this.loadMusic(nameOrSrc, opt);
+    }
     if (!this.music) return;
     this.music.currentTime = this.music.currentTime || 0;
+    this._applyMusicVol();
     this.music.play().catch(() => {});
   },
 
-  stopMusic() { if (this.music) { this.music.pause(); } },
-  setMusicVolume(v) { if (this.music) this.music.volume = Math.max(0, Math.min(1, v)); },
+  stopMusic() {
+    if (this.music) { this.music.pause(); }
+  },
+  setMusicVolume(v) {
+    this._trackVol = Math.max(0, Math.min(1, v));
+    this._applyMusicVol();
+  },
+
+  /* BGM 淡入淡出：targetVol (0..1)，dur 秒 */
+  fadeMusic(targetVol, dur) {
+    const to = Math.max(0, Math.min(1, targetVol));
+    if (!dur || dur <= 0) {
+      this._fadeVal = to;
+      this._fadeDur = 0;
+      this._applyMusicVol();
+      return this;
+    }
+    this._fadeFrom = this._fadeVal;
+    this._fadeTo = to;
+    this._fadeT = 0;
+    this._fadeDur = dur;
+    return this;
+  },
+
+  /* 平滑切歌：先用 dur/2 淡出舊歌，再載入新歌用 dur/2 淡入 */
+  crossfade(nameOrSrc, dur = 0.6, opt) {
+    opt = opt || {};
+    if (!this.music || this.music.paused || dur <= 0) {
+      this.stopMusic();
+      this.loadMusic(nameOrSrc, Object.assign({}, opt, { fadeIn: dur > 0 ? dur : 0 }));
+      this.playMusic();
+      return this;
+    }
+    if (this.currentTrack === nameOrSrc) return this;
+    const half = Math.max(0.05, dur / 2);
+    this._fadeNext = { target: nameOrSrc, dur: half, opt };
+    this.fadeMusic(0, half);
+    return this;
+  },
+
+  /* 歌單排程：Sfx.playlist(['camp', 'battle'], { loop: true, shuffle: false, fade: 0.4 }) */
+  playlist(list, opt) {
+    this._playlist = Array.isArray(list) ? list.slice() : [];
+    this._playOpt = opt || {};
+    this._playIdx = -1;
+    if (this._playlist.length && this._playOpt.autoPlay !== false) this.nextTrack();
+    return this;
+  },
+
+  nextTrack() {
+    if (!this._playlist.length) return null;
+    if (this._playOpt.shuffle && this._playlist.length > 1) {
+      let n = this._playIdx;
+      while (n === this._playIdx) n = (Math.random() * this._playlist.length) | 0;
+      this._playIdx = n;
+    } else {
+      this._playIdx++;
+      if (this._playIdx >= this._playlist.length) {
+        if (this._playOpt.loop === false) { this.stopMusic(); return null; }
+        this._playIdx = 0;
+      }
+    }
+    const name = this._playlist[this._playIdx];
+    const loopSingle = this._playlist.length === 1 && this._playOpt.loop !== false;
+    if (this._playOpt.fade) {
+      this.crossfade(name, this._playOpt.fade, { loop: loopSingle });
+    } else {
+      this.stopMusic();
+      this.loadMusic(name, { loop: loopSingle });
+      this.playMusic();
+    }
+    return name;
+  },
+
+  /* 每帧更新淡入淡出（Loop.step 會自動呼叫；測試也可手動 Sfx.update(dt)） */
+  update(dt) {
+    if (this._fadeDur <= 0) return;
+    this._fadeT += dt;
+    const p = Math.min(1, this._fadeT / this._fadeDur);
+    this._fadeVal = this._fadeFrom + (this._fadeTo - this._fadeFrom) * p;
+    this._applyMusicVol();
+    if (p >= 1) {
+      this._fadeDur = 0;
+      if (this._fadeNext) {
+        const nxt = this._fadeNext;
+        this._fadeNext = null;
+        this.stopMusic();
+        this.loadMusic(nxt.target, Object.assign({}, nxt.opt, { fadeIn: nxt.dur }));
+        this.playMusic();
+      } else if (this._fadeTo <= 0.001 && this.music) {
+        this.music.pause();
+      }
+    }
+  },
 
   /* 遊戲用：Sfx.register({ swing(){...}, hit(){...} })
      → 可用 Sfx.swing() 或 Sfx.play('swing') */
@@ -953,7 +1136,13 @@ const Fx = {
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
       p.life -= dt;
-      if (p.life <= 0) { this.pool.push(p); this.parts.splice(i, 1); continue; }
+      if (p.life <= 0) {
+        this.pool.push(p);
+        const last = this.parts.length - 1;
+        if (i !== last) this.parts[i] = this.parts[last];
+        this.parts.pop();
+        continue;
+      }
       p.vy += p.grav * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -1114,8 +1303,22 @@ const Pathfind = {
     const gScore = new Float32Array(N).fill(Infinity);
     const fScore = new Float32Array(N).fill(Infinity);
     const came = new Int32Array(N).fill(-1);
-    const open = [idx(s0.x, s0.y)];
-    const inOpen = new Uint8Array(N);
+    const start = idx(s0.x, s0.y);
+    const open = [];
+    // Entries retain their priority; stale entries are discarded after pop.
+    // Search state is local so callbacks can safely invoke find recursively.
+    const push = (node, score) => {
+      const item = { node, score }; let i = open.length; open.push(item);
+      while (i > 0) { const parent = (i - 1) >> 1; if (open[parent].score <= score) break; open[i] = open[parent]; i = parent; }
+      open[i] = item;
+    };
+    const pop = () => {
+      const first = open[0], last = open.pop();
+      if (open.length) { let i = 0; while (true) { let c = i * 2 + 1; if (c >= open.length) break;
+        if (c + 1 < open.length && open[c + 1].score < open[c].score) c++;
+        if (open[c].score >= last.score) break; open[i] = open[c]; i = c; } open[i] = last; }
+      return first.node;
+    };
     const closed = new Uint8Array(N);
     const goal = idx(t0.x, t0.y);
     const h = (i) => {
@@ -1123,20 +1326,17 @@ const Pathfind = {
       const dx = Math.abs(x - t0.x), dy = Math.abs(y - t0.y);
       return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy);   // octile
     };
-    gScore[open[0]] = 0;
-    fScore[open[0]] = h(open[0]);
-    inOpen[open[0]] = 1;
+    gScore[start] = 0;
+    fScore[start] = h(start);
+    push(start, fScore[start]);
 
     const NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
                 [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
     let nodes = 0;
 
     while (open.length && nodes < maxNodes) {
-      /* 取 f 最小的（節點數不多，線性掃描就夠） */
-      let bi = 0;
-      for (let i = 1; i < open.length; i++) if (fScore[open[i]] < fScore[open[bi]]) bi = i;
-      const cur = open.splice(bi, 1)[0];
-      inOpen[cur] = 0;
+      const cur = pop();
+      if (closed[cur]) continue;
       if (cur === goal) return this.trace(came, cur, x2, y2);
       closed[cur] = 1;
       nodes++;
@@ -1154,7 +1354,7 @@ const Pathfind = {
           gScore[ni] = g;
           fScore[ni] = g + h(ni);
           came[ni] = cur;
-          if (!inOpen[ni]) { open.push(ni); inOpen[ni] = 1; }
+          push(ni, fScore[ni]);
         }
       }
     }
@@ -1238,21 +1438,10 @@ const Pathfind = {
 
 /* ---- engine/grid.js ---- */
 /* ============================================================
-   engine/grid.js — 格子世界（tile 碰撞 + BFS 距離場）  v1.5
-   ------------------------------------------------------------
-   為什麼要有這一支：
-     炸彈人 / 倉庫番 / 吃豆人 這類「一格一格」的遊戲，每一款都會重寫
-     同一段程式：分軸移動、撞牆夾住、走廊對齊、BFS 找路、往距離場下坡走。
-     tiny-bomber 就手寫了 200 行；抽進來之後遊戲只要描述「哪格是牆」。
-
-   三件事：
-     1) 碰撞：Grid.solid() / moveX() / moveY() / alignTo()
-        · 牆用 tiles 陣列（0 = 可走，其他值由遊戲定義）
-        · 臨時障礙（炸彈、NPC）用 block callback
-        · 撞牆時「只往前夾、不往回彈」；人已經在障礙格裡時不算擋（不會卡死）
-     2) 尋路：Grid.field() 一次算出「每格離目標幾步」
-        多個目標、多來源都可以；8 方向時自動不切角
-     3) 走位：Grid.downhill() 往下坡走一步、Grid.route() 走出整條路線
+   engine/grid.js — 格子世界（tile 碰撞 + BFS 距離場 + 加權 A* 尋路）
+   v1.5：碰撞 / BFS 距離場 / 下坡走位 / 多世界
+   v1.9：新增地形權重 setCost/setCosts、加權尋路 findPath（含轉角成本 turnCost）、
+         Dijkstra 加權距離場 weightedField
    ============================================================ */
 
 const Grid = {
@@ -1261,17 +1450,11 @@ const Grid = {
   rows: 0,
   tiles: null,      // Uint8Array：0 = 可走（非 0 的意義由遊戲決定）
   block: null,      // fn(cx, cy, e) → true 表示「對這個實體也算擋」
+  costs: null,      // { tileVal: cost }：設定為 >0 的非 0 tile 會視為「可走但有地形耗時」
+  _qBuf: null,
 
   /* ---------------- 建立 ---------------- */
-  /* 兩種用法：
-     A) 單例（跟 Physics / Pathfind 一樣）→ 只會有一個世界
-          Grid.setup({ cell: 16, cols: 20, rows: 13 });
-     B) 多個獨立的地圖（編輯器、分割畫面、同時算兩張圖）
-          const a = Grid.create({ cell: 16, cols: 20, rows: 13 });
-          const b = Grid.createFromTiles(tiles, 30, 26);
-     兩者都是同一個 API；create() 出來的互不影響。 */
-
-  /* Grid.setup({ cell: 16, cols: 20, rows: 13, fill: 0 }) */
+  /* Grid.setup({ cell: 16, cols: 20, rows: 13, fill: 0, costs: { 2: 3 } }) */
   setup(opt) {
     opt = opt || {};
     this.cell = opt.cell || 16;
@@ -1280,6 +1463,7 @@ const Grid = {
     this.tiles = new Uint8Array(this.cols * this.rows);
     if (opt.fill) this.tiles.fill(opt.fill);
     this.block = null;
+    this.costs = opt.costs ? Object.assign({}, opt.costs) : null;
     return this;
   },
 
@@ -1291,6 +1475,7 @@ const Grid = {
     this.rows = rows;
     this.tiles = tiles;
     this.block = opt.block || null;
+    this.costs = opt.costs ? Object.assign({}, opt.costs) : null;
     return this;
   },
 
@@ -1309,6 +1494,34 @@ const Grid = {
 
   /* 設定臨時障礙：fn(cx, cy, e) → true = 擋（例如炸彈） */
   setBlock(fn) { this.block = fn; return this; },
+
+  /* ---------------- 地形移動成本（v1.9） ---------------- */
+  /* 設定單一 tile 的移動成本（cost > 0 代表可通行，例如泥沼=3、淺水=5；0 或 null 代表維持牆壁） */
+  setCost(tileVal, cost) {
+    if (!this.costs) this.costs = {};
+    if (cost == null || cost <= 0) delete this.costs[tileVal];
+    else this.costs[tileVal] = cost;
+    return this;
+  },
+
+  /* 批次設定地形移動成本：grid.setCosts({ 0: 1, 2: 3, 3: 5 }) */
+  setCosts(map) {
+    this.costs = map ? Object.assign({}, map) : null;
+    return this;
+  },
+
+  /* 查詢進入 (cx, cy) 的步數成本（預設 1） */
+  costAt(cx, cy, customCost) {
+    if (!this.inside(cx, cy)) return Infinity;
+    const t = this.tiles[this.idx(cx, cy)];
+    if (typeof customCost === 'function') {
+      const c = customCost(cx, cy, t);
+      return c != null ? c : 1;
+    }
+    if (customCost && customCost[t] != null) return customCost[t];
+    if (this.costs && this.costs[t] != null) return this.costs[t];
+    return 1;
+  },
 
   /* ---------------- 座標 ---------------- */
   idx(cx, cy) { return cy * this.cols + cx; },
@@ -1332,11 +1545,16 @@ const Grid = {
 
   /* ---------------- 碰撞 ---------------- */
   /* 擋不擋？e 可以有：
-       e.passTiles = [2]  → 這幾種 tile 對它來說可以走（例如飛行敵人穿木桶） */
+       e.passTiles = [2]  → 這幾種 tile 對它來說可以走（例如飛行敵人穿木桶）
+       若該 tile 在 this.costs 中設有 > 0 的成本，也視為可走地形（例如草叢/泥沼） */
   solid(cx, cy, e) {
     if (!this.inside(cx, cy)) return true;
     const t = this.tiles[this.idx(cx, cy)];
-    if (t && !(e && e.passTiles && e.passTiles.indexOf(t) >= 0)) return true;
+    if (t) {
+      const canPass = (e && e.passTiles && e.passTiles.indexOf(t) >= 0) ||
+                      (this.costs && this.costs[t] > 0 && isFinite(this.costs[t]));
+      if (!canPass) return true;
+    }
     return !!(this.block && this.block(cx, cy, e));
   },
 
@@ -1405,10 +1623,10 @@ const Grid = {
      回傳 Int16Array：步數，-1 = 走不到；來源格 = 0（來源可以是牆，例如木桶） */
   field(opt) {
     opt = opt || {};
-    const W = this.cols, H = this.rows;
+    const W = this.cols, H = this.rows, N = W * H;
     const passTiles = opt.ignoreTiles || null;
     const ent = passTiles ? { passTiles } : null;
-    const f = opt.into || new Int16Array(W * H).fill(-1);
+    const f = opt.into || new Int16Array(N).fill(-1);
     if (opt.into) f.fill(-1);
     const src = opt.cells || (opt.from ? [opt.from] : []);
     const block = opt.block || null;
@@ -1418,16 +1636,17 @@ const Grid = {
       ? [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
       : [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-    const q = [];
+    // Callbacks may recursively query the same grid; use a per-call queue.
+    const q = new Int32Array(N);
+    let head = 0, tail = 0;
     for (const c of src) {
       if (!c || !this.inside(c.cx, c.cy)) continue;
       const i = this.idx(c.cx, c.cy);
       if (f[i] !== -1) continue;
       f[i] = 0;
-      q.push(i);
+      q[tail++] = i;
     }
-    let head = 0;
-    while (head < q.length) {
+    while (head < tail) {
       const cur = q[head++];
       const x = cur % W, y = (cur / W) | 0;
       const d = f[cur] + 1;
@@ -1442,10 +1661,251 @@ const Grid = {
         if (block && block(nx, ny)) continue;
         if (dx && dy && (this.solid(x + dx, y, ent) || this.solid(x, y + dy, ent))) continue;  // 不切角
         f[ni] = d;
-        q.push(ni);
+        q[tail++] = ni;
       }
     }
     return f;
+  },
+
+  /* ---------------- Dijkstra 加權距離場（v1.9） ---------------- */
+  /* 與 field() 用法相同，但會把每格的移動成本（this.costs 或 opt.cost）算進去。
+     回傳 Float32Array：累積成本，-1 = 走不到；來源格 = 0。
+     可直接丟進 Grid.downhill() 與 Grid.route()！ */
+  weightedField(opt) {
+    opt = opt || {};
+    const W = this.cols, H = this.rows, N = W * H;
+    const passTiles = opt.ignoreTiles || null;
+    const ent = passTiles ? { passTiles } : null;
+    const f = opt.into || new Float32Array(N).fill(-1);
+    if (opt.into) f.fill(-1);
+    const src = opt.cells || (opt.from ? [opt.from] : []);
+    const block = opt.block || null;
+    const diag = !!opt.diagonal;
+    const maxCost = opt.maxCost || opt.maxDist || 0;
+    const customCost = opt.cost || null;
+    const NB = diag
+      ? [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+         [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]]
+      : [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1]];
+
+    const heap = [];
+    const push = (idx, cost) => {
+      heap.push({ idx, cost });
+      let k = heap.length - 1;
+      while (k > 0) {
+        const p = (k - 1) >> 1;
+        if (heap[p].cost <= heap[k].cost) break;
+        const tmp = heap[p]; heap[p] = heap[k]; heap[k] = tmp;
+        k = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0];
+      const last = heap.pop();
+      if (heap.length > 0) {
+        heap[0] = last;
+        let k = 0;
+        const len = heap.length;
+        while (true) {
+          let l = (k << 1) + 1, r = l + 1, sm = k;
+          if (l < len && heap[l].cost < heap[sm].cost) sm = l;
+          if (r < len && heap[r].cost < heap[sm].cost) sm = r;
+          if (sm === k) break;
+          const tmp = heap[k]; heap[k] = heap[sm]; heap[sm] = tmp;
+          k = sm;
+        }
+      }
+      return top;
+    };
+
+    for (const c of src) {
+      if (!c || !this.inside(c.cx, c.cy)) continue;
+      const i = this.idx(c.cx, c.cy);
+      if (f[i] === 0) continue;
+      f[i] = 0;
+      push(i, 0);
+    }
+
+    while (heap.length) {
+      const cur = pop();
+      const ci = cur.idx;
+      if (f[ci] >= 0 && cur.cost > f[ci] + 1e-5) continue;
+      const x = ci % W, y = (ci / W) | 0;
+      for (let k = 0; k < NB.length; k++) {
+        const dx = NB[k][0], dy = NB[k][1], mult = NB[k][2];
+        const nx = x + dx, ny = y + dy;
+        if (!this.inside(nx, ny)) continue;
+        if (this.solid(nx, ny, ent)) continue;
+        if (block && block(nx, ny)) continue;
+        if (dx && dy && (this.solid(x + dx, y, ent) || this.solid(x, y + dy, ent))) continue;
+        const stepCost = this.costAt(nx, ny, customCost) * mult;
+        if (!(stepCost > 0 && isFinite(stepCost))) continue;
+        const nc = cur.cost + stepCost;
+        if (maxCost && nc > maxCost) continue;
+        const ni = ny * W + nx;
+        if (f[ni] < 0 || nc < f[ni] - 1e-5) {
+          f[ni] = nc;
+          push(ni, nc);
+        }
+      }
+    }
+    return f;
+  },
+
+  /* ---------------- 加權 A* 尋路 + 轉角成本（v1.9） ---------------- */
+  /* Grid.findPath(from, to, opt)
+       from: { cx, cy }
+       to:   { cx, cy }
+       opt:
+         cost:       fn(cx, cy, tileVal) 或 { tileVal: cost }（預設用 this.costs）
+         turnCost:   轉彎額外成本（預設 0；設 > 0 如 0.6 可讓路徑減少無謂轉折、走直線）
+         diagonal:   true = 8 方向（自動不切角）
+         ignoreTiles:[2, ...] 額外視為可通行的 tile
+         block:      fn(cx, cy) → true 視為不可走
+         maxNodes:   搜尋上限（預設 8000）
+     回傳：[{ cx, cy, cost }, ...]（不含起點；找不到回傳 []），
+           陣列上附帶 path.totalCost（總耗時）與 path.turns（轉彎次數） */
+  findPath(from, to, opt) {
+    if (!from || !to) return [];
+    const sx = from.cx | 0, sy = from.cy | 0;
+    const tx = to.cx | 0, ty = to.cy | 0;
+    if (!this.inside(sx, sy) || !this.inside(tx, ty)) return [];
+    if (sx === tx && sy === ty) {
+      const empty = [];
+      empty.totalCost = 0;
+      empty.turns = 0;
+      return empty;
+    }
+
+    opt = opt || {};
+    const W = this.cols, H = this.rows, N = W * H;
+    const diag = !!opt.diagonal;
+    const turnCost = opt.turnCost || 0;
+    const customCost = opt.cost || null;
+    const block = opt.block || null;
+    const maxNodes = opt.maxNodes || 8000;
+    const ent = opt.ignoreTiles ? { passTiles: opt.ignoreTiles } : null;
+
+    const NB = diag
+      ? [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+         [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]]
+      : [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1]];
+    const D = NB.length;
+    const S = turnCost > 0 ? (D + 1) : 1;     // 有 turnCost 時狀態包含進入方向（0..D-1，D=起點）
+    const startDir = turnCost > 0 ? D : 0;
+
+    const totalStates = N * S;
+    const gScore = new Float32Array(totalStates).fill(Infinity);
+    const cameState = new Int32Array(totalStates).fill(-1);
+    const closed = new Uint8Array(totalStates);
+
+    // A user-defined cost can be less than one, so unit-distance heuristics
+    // are not admissible. Dijkstra's zero heuristic preserves optimality.
+    const heur = () => 0;
+
+    const heap = [];
+    const push = (st, f) => {
+      heap.push({ st, f });
+      let k = heap.length - 1;
+      while (k > 0) {
+        const p = (k - 1) >> 1;
+        if (heap[p].f <= heap[k].f) break;
+        const tmp = heap[p]; heap[p] = heap[k]; heap[k] = tmp;
+        k = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0];
+      const last = heap.pop();
+      if (heap.length > 0) {
+        heap[0] = last;
+        let k = 0;
+        const len = heap.length;
+        while (true) {
+          let l = (k << 1) + 1, r = l + 1, sm = k;
+          if (l < len && heap[l].f < heap[sm].f) sm = l;
+          if (r < len && heap[r].f < heap[sm].f) sm = r;
+          if (sm === k) break;
+          const tmp = heap[k]; heap[k] = heap[sm]; heap[sm] = tmp;
+          k = sm;
+        }
+      }
+      return top;
+    };
+
+    const startCell = sy * W + sx;
+    const goalCell = ty * W + tx;
+    const startState = startCell * S + startDir;
+    gScore[startState] = 0;
+    push(startState, heur(sx, sy));
+
+    let nodes = 0;
+    let goalState = -1;
+
+    while (heap.length && nodes < maxNodes) {
+      const cur = pop();
+      const st = cur.st;
+      if (closed[st]) continue;
+      closed[st] = 1;
+      const cell = (st / S) | 0;
+      const prevDir = st % S;
+      if (cell === goalCell) { goalState = st; break; }
+      nodes++;
+
+      const x = cell % W, y = (cell / W) | 0;
+      const curG = gScore[st];
+
+      for (let d = 0; d < D; d++) {
+        const dx = NB[d][0], dy = NB[d][1], mult = NB[d][2];
+        const nx = x + dx, ny = y + dy;
+        if (!this.inside(nx, ny)) continue;
+        const nCell = ny * W + nx;
+        if (nCell !== goalCell) {
+          if (this.solid(nx, ny, ent)) continue;
+          if (block && block(nx, ny)) continue;
+        } else {
+          if (this.solid(nx, ny, ent) && !(opt.allowSolidGoal)) continue;
+          if (block && block(nx, ny)) continue;
+        }
+        if (dx && dy && (this.solid(x + dx, y, ent) || this.solid(x, y + dy, ent))) continue;
+
+        const baseCost = this.costAt(nx, ny, customCost) * mult;
+        if (!(baseCost > 0 && isFinite(baseCost))) continue;
+        const turnPenalty = (turnCost > 0 && prevDir < D && prevDir !== d) ? turnCost : 0;
+        const ng = curG + baseCost + turnPenalty;
+        const nSt = nCell * S + (turnCost > 0 ? d : 0);
+        if (closed[nSt]) continue;
+        if (ng < gScore[nSt] - 1e-6) {
+          gScore[nSt] = ng;
+          cameState[nSt] = st;
+          push(nSt, ng + heur(nx, ny));
+        }
+      }
+    }
+
+    if (goalState < 0) return [];
+    const out = [];
+    let cur = goalState;
+    while (cur !== -1 && cur !== startState) {
+      const c = (cur / S) | 0;
+      out.push({ cx: c % W, cy: (c / W) | 0, cost: Math.round(gScore[cur] * 1000) / 1000 });
+      cur = cameState[cur];
+    }
+    out.reverse();
+
+    /* 計算實際轉彎次數 */
+    let turns = 0;
+    let pdx = 0, pdy = 0;
+    let px = sx, py = sy;
+    for (let i = 0; i < out.length; i++) {
+      const dx = out[i].cx - px, dy = out[i].cy - py;
+      if (i > 0 && (dx !== pdx || dy !== pdy)) turns++;
+      pdx = dx; pdy = dy;
+      px = out[i].cx; py = out[i].cy;
+    }
+    out.totalCost = out.length ? out[out.length - 1].cost : 0;
+    out.turns = turns;
+    return out;
   },
 
   /* 從這格往「距離比較小」的鄰格走一步；回傳方向 {x,y} 或 null
@@ -1455,7 +1915,7 @@ const Grid = {
     const W = this.cols;
     const cur = field[this.idx(cx, cy)];
     if (cur === 0) return null;                 // 已經在目標上
-    let bestD = cur < 0 ? 32767 : cur;
+    let bestD = cur < 0 ? Infinity : cur;
     let best = null;
     const diag = !!opt.diagonal;
     const dirs = diag
@@ -1465,6 +1925,7 @@ const Grid = {
       const nx = cx + dx, ny = cy + dy;
       if (!this.inside(nx, ny)) continue;
       if (this.solid(nx, ny)) continue;
+      if (dx && dy && (this.solid(cx + dx, cy) || this.solid(cx, cy + dy))) continue;
       const ni = ny * W + nx;
       if (opt.avoid && opt.avoid[ni]) continue;
       const d = field[ni];
@@ -1507,7 +1968,10 @@ const Grid = {
 
   countFree() {
     let n = 0;
-    for (let i = 0; i < this.tiles.length; i++) if (!this.tiles[i]) n++;
+    for (let i = 0; i < this.tiles.length; i++) {
+      const t = this.tiles[i], cost = this.costs && this.costs[t];
+      if (!t || (cost > 0 && isFinite(cost))) n++;
+    }
     return n;
   },
 
@@ -1706,9 +2170,9 @@ const Level = {
     const tiles = new Uint8Array(this.tiles.length);
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i];
-      tiles[i] = (!t || (pass && pass[t])) ? 0 : 1;
+      tiles[i] = (!t || (pass && pass[t])) ? 0 : ((opt.costs && opt.costs[t] > 0) ? t : 1);
     }
-    const g = Grid.createFromTiles(tiles, this.cols, this.rows, { cell: this.cell });
+    const g = Grid.createFromTiles(tiles, this.cols, this.rows, { cell: this.cell, costs: opt.costs });
     if (opt.block) g.setBlock(opt.block);
     return g;
   },
@@ -1966,6 +2430,14 @@ const LevelLib = {
   },
   clear() { Save.del(this.KEY); return this; },
 
+  share(lv) {
+    const code = this.encode(lv);
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).catch(() => {});
+    }
+    return code;
+  },
+
   /* 驗證 + 存進關卡庫（匯入用） */
   importCode(code, name) {
     const lv = this.decode(code);
@@ -1977,33 +2449,11 @@ const LevelLib = {
 
 /* ---- engine/edit.js ---- */
 /* ============================================================
-   engine/edit.js — 格子關卡編輯器（畫格存 JSON）  v1.6
-   ------------------------------------------------------------
-   給「關卡資料是格子的遊戲」用的最小編輯器：滑鼠塗格子、選色盤、存檔。
-
-   用法（遊戲端）：
-     Edit.init({
-       level: Level,                     // 要編輯的 Level（會直接改它）
-       palette: [                        // 色盤：第一個是「橡皮擦/可走」
-         { v: 0, name: '地板', color: '#b8d94a' },
-         { v: 1, name: '牆',   color: '#5b6b8a' },
-       ],
-       cell: 16,                         // 幾 px 一格
-       origin: { x: 0, y: 16 },          // 地圖左上角在畫面上的位置
-       canvas: 'game',                   // 要吃哪個 canvas 的滑鼠
-       onChange: (lv) => {},             // 每次塗完（給遊戲重建 Grid 用）
-       onSave: (json) => {},             // 按 S 存檔時（預設存 localStorage + console）
-       key: 'tiny-level',                // localStorage key
-     });
-     Edit.toggle();           // 開 / 關
-     Edit.draw();             // 每帧最後呼叫（畫格線、色盤、提示）
-     Edit.update(dt);         // 可選（沒有動畫，留給之後）
-
-   操作：
-     左鍵塗 / 拖曳連續塗　　右鍵（或 Shift+左鍵）擦成 0
-     1~9 選色盤　　滾輪 / Q E 換色　　G 切格線
-     Ctrl+Z 復原　　S 存檔（localStorage + console）　　X 匯出 JSON 到 console
-     E 或 Esc 關閉編輯器（遊戲端自己決定要不要綁）
+   engine/edit.js — 格子關卡編輯器（畫格 / 標記 / 物件 / 存 JSON）
+   v1.6：塗格、色盤、Ctrl+Z、存檔
+   v1.7.1：markers（入口/出口寫進 meta）
+   v1.8：objectTypes（點格子放/收 Level.objects）
+   v1.9：Edit.draw() 完整繪製標記、物件與全色盤；Ctrl+Z 同步復原格子、標記與物件
    ============================================================ */
 
 const Edit = {
@@ -2059,13 +2509,19 @@ const Edit = {
 
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled) return;
+      if (this.hitPalette(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const c = toCell(e);
+      if (!this.level || !this.level.inside(c.cx, c.cy)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (this.hitPalette(e)) return;
       this.pushUndo();
       this.painting = (e.button === 2 || e.shiftKey) ? -1 : 1;
       this.lastPaint = null;
-      this.paint(toCell(e));
+      this.paint(c);
     }, true);
 
     canvas.addEventListener('pointermove', (e) => {
@@ -2100,7 +2556,7 @@ const Edit = {
   },
 
   /* ---------------- 色盤 ---------------- */
-  /* 色盤項目 = 格子色 + 標記（標記接在後面） */
+  /* 色盤項目 = 格子色 + 標記 + 物件 */
   paletteItems() {
     const items = [];
     for (let i = 0; i < this.palette.length; i++) {
@@ -2120,7 +2576,11 @@ const Edit = {
   },
 
   paletteRect(i) {
-    const w = 56, h = 14, gap = 2;
+    const n = Math.max(1, this.paletteItems().length);
+    const gap = 2;
+    const maxW = Math.floor((GAME_W - 8 - (n - 1) * gap) / n);
+    const w = Math.max(26, Math.min(56, maxW));
+    const h = 14;
     const y = this.paletteY != null ? this.paletteY : GAME_H - h - 3;
     return { x: 4 + i * (w + gap), y, w, h };
   },
@@ -2140,16 +2600,27 @@ const Edit = {
     return false;
   },
 
-  /* ---------------- 畫格子 ---------------- */
+  /* ---------------- 畫格子 / 復原 ---------------- */
   pushUndo() {
     if (!this.level) return;
-    this.undoStack.push(Uint8Array.from(this.level.tiles));
+    this.undoStack.push({
+      tiles: Uint8Array.from(this.level.tiles),
+      meta: JSON.parse(JSON.stringify(this.level.meta || {})),
+      objects: JSON.parse(JSON.stringify(this.level.objects || [])),
+    });
     if (this.undoStack.length > 60) this.undoStack.shift();
   },
 
   undo() {
     if (!this.undoStack.length || !this.level) return false;
-    this.level.tiles = this.undoStack.pop();
+    const snap = this.undoStack.pop();
+    if (snap instanceof Uint8Array) {
+      this.level.tiles = snap;
+    } else {
+      this.level.tiles = snap.tiles;
+      this.level.meta = snap.meta || {};
+      this.level.objects = snap.objects || [];
+    }
     this.changed();
     return true;
   },
@@ -2171,8 +2642,16 @@ const Edit = {
       return true;
     }
     if (item.kind === 'mark') {
-      // 標記（入口／出口…）不算格子，寫進 level.meta
-      if (this.painting < 0) return false;
+      // 標記（入口／出口…）不算格子，寫進 level.meta；右鍵點同位置可清除標記
+      if (this.painting < 0) {
+        const cur = this.level.meta[item.key];
+        if (cur && cur[0] === c.cx && cur[1] === c.cy) {
+          delete this.level.meta[item.key];
+          this.changed();
+          return true;
+        }
+        return false;
+      }
       this.level.meta[item.key] = [c.cx, c.cy];
       this.changed();
       return true;
@@ -2204,7 +2683,7 @@ const Edit = {
   exportJSON() {
     if (!this.level) return '';
     const json = this.level.serialize(true);
-    console.log('[edit] 關卡 JSON：\\n' + json);
+    console.log('[edit] 關卡 JSON：\n' + json);
     if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('JSON 已印到 console');
     this.lastJSON = json;
     return json;
@@ -2244,9 +2723,49 @@ const Edit = {
       ctx.globalAlpha = 1;
     }
 
+    /* 物件層（Level.objects） */
+    if (this.level.objects && this.level.objects.length) {
+      const objDefs = this.objectTypes || [];
+      for (const o of this.level.objects) {
+        if (!this.level.inside(o.cx, o.cy)) continue;
+        const def = objDefs.find(d => d.type === o.type);
+        const col = (def && def.color) || '#ffd45e';
+        const label = ((def && def.name) || o.type || '?').slice(0, 2);
+        const px = ox + o.cx * T + T / 2;
+        const py = oy + o.cy * T + T / 2;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(3, T * 0.34), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#0b0f18';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        text(label, px, py + 0.5, { size: 5, color: '#0b0f18', align: 'center', baseline: 'middle', shadow: false });
+      }
+    }
+
+    /* 標記層（level.meta[key] = [cx, cy]） */
+    if (this.markers && this.level.meta) {
+      for (const m of this.markers) {
+        const pt = this.level.meta[m.key];
+        if (!Array.isArray(pt) || pt.length < 2) continue;
+        const cx = pt[0], cy = pt[1];
+        if (!this.level.inside(cx, cy)) continue;
+        const px = ox + cx * T, py = oy + cy * T;
+        ctx.strokeStyle = m.color || '#e5484d';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px + 1.5, py + 1.5, T - 3, T - 3);
+        roundRect(px + 1, py + 1, T - 2, 7, 2, m.color || '#e5484d');
+        text((m.name || m.key).slice(0, 2), px + T / 2, py + 4.5, {
+          size: 4.8, color: '#ffffff', align: 'center', baseline: 'middle', shadow: false,
+        });
+      }
+    }
+
     /* 游標 */
+    const items = this.paletteItems();
     if (this.hover && this.level.inside(this.hover.cx, this.hover.cy)) {
-      const p = this.palette[this.sel];
+      const p = items[this.sel];
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = p ? p.color : '#fff';
       ctx.fillRect(ox + this.hover.cx * T + 1, oy + this.hover.cy * T + 1, T - 2, T - 2);
@@ -2256,14 +2775,24 @@ const Edit = {
       ctx.strokeRect(ox + this.hover.cx * T + 0.5, oy + this.hover.cy * T + 0.5, T - 1, T - 1);
     }
 
-    /* 色盤 */
-    for (let i = 0; i < this.palette.length; i++) {
-      const p = this.palette[i];
+    /* 色盤（含格子、標記、物件） */
+    for (let i = 0; i < items.length; i++) {
+      const p = items[i];
       const b = this.paletteRect(i);
       roundRect(b.x, b.y, b.w, b.h, 3, 'rgba(12,18,14,0.9)', i === this.sel ? '#ffd45e' : '#5d7a52');
       ctx.fillStyle = p.color;
-      ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
-      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5.5, color: '#f6ffe6', shadow: false });
+      if (p.kind === 'object') {
+        ctx.beginPath();
+        ctx.arc(b.x + 7, b.y + 7, 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.kind === 'mark') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(b.x + 3.5, b.y + 3.5, 7, 7);
+      } else {
+        ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
+      }
+      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5, color: '#f6ffe6', shadow: false });
     }
 
     /* 提示 */
@@ -2506,9 +3035,10 @@ const Scene = {
 
 /* ---- engine/ui.js ---- */
 /* ============================================================
-   engine/ui.js — 文字（字型快取）、面板、熱區、按鈕、九宮格
+   engine/ui.js — 文字（字型快取）、面板、熱區、按鈕、九宮格、拉桿、混音器、關卡選單
    v1.3：新增 UI.hot / hitAt / pointer / click / button / chip / bar /
          nineSlice / measure / bind（熱區物件會重複使用，不每帧配置）
+   v1.9：新增 UI.slider / UI.mixer（混音音量選單）/ UI.levelMenu（關卡庫選單）/ UI.act
    ============================================================ */
 
 let _fontCache = '';
@@ -2580,6 +3110,7 @@ const UI = {
   _hot: [],               // 熱區池（重複使用，避免每帧配置）
   _hotN: 0,
   _mouse: { x: -1, y: -1 },
+  _dragId: null,          // 正在拖曳的 slider id
   _measure: new Map(),    // 文字寬度快取（按鈕一多就有感）
 
   /* 每帧開頭呼叫：清空熱區（只是把索引歸零，不重建陣列） */
@@ -2592,6 +3123,13 @@ const UI = {
     r.id = id; r.x = x; r.y = y; r.w = w; r.h = h; r.opt = opt || null;
     this._hotN++;
     return r;
+  },
+
+  findHot(id) {
+    for (let i = this._hotN - 1; i >= 0; i--) {
+      if (this._hot[i].id === id) return this._hot[i];
+    }
+    return null;
   },
 
   hitAt(x, y) {
@@ -2607,6 +3145,13 @@ const UI = {
     this._mouse.x = x; this._mouse.y = y;
     this.hover = (x < 0 || y < 0) ? null : this.hitAt(x, y);
     if (G.canvas) G.canvas.style.cursor = this.hover ? 'pointer' : 'default';
+    if (this._dragId) {
+      const dr = this.findHot(this._dragId);
+      if (dr && dr.opt && dr.opt.kind === 'slider') {
+        const v = U.clamp((x - dr.x) / Math.max(1, dr.w), 0, 1);
+        if (dr.opt.onChange) dr.opt.onChange(v);
+      }
+    }
     return this.hover;
   },
 
@@ -2614,6 +3159,22 @@ const UI = {
   click(x, y) {
     const r = this.hitAt(x, y);
     return r ? r.id : null;
+  },
+
+  /* 點擊並觸發熱區內建行為（如 slider / mixer / levelMenu 的 callback）；回傳命中的 id */
+  act(x, y) {
+    const r = this.hitAt(x, y);
+    if (!r) return null;
+    if (r.opt) {
+      if (r.opt.kind === 'slider') {
+        this._dragId = r.id;
+        const v = U.clamp((x - r.x) / Math.max(1, r.w), 0, 1);
+        if (r.opt.onChange) r.opt.onChange(v);
+      } else if (r.opt.onClick) {
+        r.opt.onClick(r.id);
+      }
+    }
+    return r.id;
   },
 
   /* 把 canvas 的指標事件接到 UI 熱區；onAct(id, point) 只在命中時呼叫 */
@@ -2624,12 +3185,17 @@ const UI = {
       const p = toWorld(e);
       this.pointer(p.x, p.y);
     }, { passive: true });
-    canvas.addEventListener('pointerleave', () => this.pointer(-1, -1), { passive: true });
+    canvas.addEventListener('pointerleave', () => {
+      this._dragId = null;
+      this.pointer(-1, -1);
+    }, { passive: true });
+    addEventListener('pointerup', () => { this._dragId = null; }, { passive: true });
+    addEventListener('pointercancel', () => { this._dragId = null; }, { passive: true });
     canvas.addEventListener('pointerdown', (e) => {
       const p = toWorld(e);
       this.pointer(p.x, p.y);
       if (opt.unlock !== false && typeof Sfx !== 'undefined') Sfx.unlock();
-      const id = this.click(p.x, p.y);
+      const id = this.act(p.x, p.y);
       if (id != null && onAct) onAct(id, p);
     });
     return this;
@@ -2675,7 +3241,7 @@ const UI = {
   },
 
   /* 按鈕：hover / disabled / 熱區 一次搞定
-     opt = { size, color, fill, disabled, radius, textAlign, border } */
+     opt = { size, color, fill, disabled, radius, textAlign, border, onClick } */
   button(id, x, y, w, h, label, opt) {
     opt = opt || {};
     const hov = this.hover && this.hover.id === id;
@@ -2689,7 +3255,136 @@ const UI = {
       color: opt.disabled ? (opt.colorDisabled || '#5c6779') : (opt.color || '#f2e8d5'),
       align: 'center', baseline: 'middle',
     });
-    if (!opt.disabled) this.hot(id, x, y, w, h);
+    if (!opt.disabled) this.hot(id, x, y, w, h, opt.onClick ? { onClick: opt.onClick } : null);
+    return this;
+  },
+
+  /* 橫向拉桿（0..1）：支援點擊與拖曳
+     opt = { label, showPct, color, bg, onChange: (v) => {} } */
+  slider(id, x, y, w, h, val, opt) {
+    opt = opt || {};
+    const ctx = G.ctx;
+    const pct = U.clamp(val || 0, 0, 1);
+    const hov = (this.hover && this.hover.id === id) || this._dragId === id;
+    const trackH = Math.max(4, Math.min(h - 4, 6));
+    const ty = y + (h - trackH) / 2;
+
+    if (opt.label) {
+      text(opt.label, x, y - 8, { size: opt.size || 5.5, color: opt.labelColor || '#b9c8df' });
+    }
+    if (opt.showPct !== false) {
+      text(Math.round(pct * 100) + '%', x + w, y - 8, {
+        size: opt.size || 5.5, color: '#ffd45e', align: 'right',
+      });
+    }
+
+    roundRect(x, ty, w, trackH, 2, opt.bg || '#111827', hov ? '#6384b3' : '#2d3b53');
+    const fw = Math.round(w * pct);
+    if (fw > 0) {
+      roundRect(x, ty, fw, trackH, 2, opt.color || '#61afef');
+    }
+    const kx = x + fw;
+    const ky = y + h / 2;
+    ctx.fillStyle = hov ? '#ffe9a8' : '#f2e8d5';
+    ctx.beginPath();
+    ctx.arc(kx, ky, Math.max(3.5, trackH * 0.75), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#101426';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    this.hot(id, x, y, w, h, { kind: 'slider', onChange: opt.onChange || null });
+    return this;
+  },
+
+  /* 內建混音器選單（一行畫出 Master / BGM / SFX 音量拉桿 + 靜音按鈕）
+     opt = { title: '音效與音樂', saveKey: 'te-audio', onClose: () => {} } */
+  mixer(x, y, w, opt) {
+    opt = opt || {};
+    if (typeof Sfx === 'undefined') return this;
+    const h = opt.h || 104;
+    const saveKey = opt.saveKey || 'te-audio';
+    panel(x, y, w, h, { fill: opt.fill || '#141c2b', border: opt.border || '#4b6184' });
+    text(opt.title || '混音音量設定', x + 8, y + 6, { size: 6.5, color: '#9fd0ff' });
+
+    const muteLabel = Sfx.muted ? '🔇 已靜音' : '🔊 正常';
+    this.button('mixer:mute', x + w - 48, y + 5, 42, 13, muteLabel, {
+      size: 5.2,
+      fill: Sfx.muted ? '#4a222a' : '#213529',
+      border: Sfx.muted ? '#e5484d' : '#58a65c',
+      onClick: () => { Sfx.mute(); Sfx.savePrefs(saveKey); },
+    });
+
+    const sx = x + 10, sw = w - 20;
+    this.slider('mixer:master', sx, y + 29, sw, 10, Sfx.master, {
+      label: '主音量 Master', color: '#ffd45e',
+      onChange: (v) => { Sfx.setMaster(v); Sfx.savePrefs(saveKey); },
+    });
+    this.slider('mixer:bgm', sx, y + 54, sw, 10, Sfx.bgmVol, {
+      label: '音樂 BGM', color: '#61afef',
+      onChange: (v) => { Sfx.setBgm(v); Sfx.savePrefs(saveKey); },
+    });
+    this.slider('mixer:sfx', sx, y + 79, sw, 10, Sfx.sfxVol, {
+      label: '音效 SFX', color: '#7ec08d',
+      onChange: (v) => { Sfx.setSfx(v); Sfx.savePrefs(saveKey); },
+    });
+    return this;
+  },
+
+  /* 內建關卡選單 UI（搭配 LevelLib 列出已儲存關卡：點選遊玩 / 分享碼 / 刪除）
+     opt = { title, items, selectedId, onSelect: (lv, entry) => {}, onShare: (code, entry) => {}, onDelete: (entry) => {} } */
+  levelMenu(x, y, w, h, opt) {
+    opt = opt || {};
+    panel(x, y, w, h, { fill: opt.fill || '#141c2b', border: opt.border || '#4b6184' });
+    const items = opt.items || (typeof LevelLib !== 'undefined' ? LevelLib.list() : []);
+    text(opt.title || ('關卡庫（' + items.length + '）'), x + 8, y + 6, { size: 6.5, color: '#9fd0ff' });
+
+    const rowH = 18;
+    const maxRows = Math.max(1, Math.floor((h - 24) / rowH));
+    if (!items.length) {
+      text('尚無儲存的關卡', x + w / 2, y + h / 2, {
+        size: 6, color: '#64718a', align: 'center', baseline: 'middle',
+      });
+      return this;
+    }
+
+    for (let i = 0; i < Math.min(items.length, maxRows); i++) {
+      const it = items[i];
+      const ry = y + 21 + i * rowH;
+      const isSel = opt.selectedId && opt.selectedId === it.id;
+      roundRect(x + 6, ry, w - 12, rowH - 2, 2,
+        isSel ? 'rgba(65,98,145,0.45)' : 'rgba(24,34,52,0.75)',
+        isSel ? '#9fd0ff' : 'rgba(255,255,255,0.06)');
+      const info = (it.name || '未命名') + ' (' + it.cols + '×' + it.rows + ')';
+      text(info, x + 10, ry + 4, { size: 5.5, color: '#f2e8d5' });
+
+      const bx = x + w - 74;
+      this.button('level:play:' + it.id, bx, ry + 2, 26, 12, '遊玩', {
+        size: 5, fill: '#244034', border: '#58a65c',
+        onClick: () => {
+          if (opt.onSelect && typeof LevelLib !== 'undefined') {
+            const lv = LevelLib.get(it.id);
+            if (lv) opt.onSelect(lv, it);
+          }
+        },
+      });
+      this.button('level:code:' + it.id, bx + 28, ry + 2, 22, 12, '碼', {
+        size: 5,
+        onClick: () => {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(it.code).catch(() => {});
+          }
+          if (opt.onShare) opt.onShare(it.code, it);
+        },
+      });
+      this.button('level:del:' + it.id, bx + 52, ry + 2, 14, 12, '×', {
+        size: 5, fill: '#3d2026', border: '#a84248',
+        onClick: () => {
+          if (typeof LevelLib !== 'undefined') LevelLib.remove(it.id);
+          if (opt.onDelete) opt.onDelete(it);
+        },
+      });
+    }
     return this;
   },
 
@@ -3146,48 +3841,137 @@ const Screen = {
 
 /* ---- engine/net.js ---- */
 /* ============================================================
-   net.js — 區網連線對戰（一主機 + 一加入）
-   ・用 tools/serve.py 內建的 WebSocket 中繼（/ws?room=CODE&role=host|peer）
+   net.js — 區網連線對戰（1 房主 + 最多 3 加入端＝4 人，支援斷線自動重連）
+   ・用 tools/serve.py 內建的 WebSocket 中繼（/ws?room=CODE&role=host|peer&cid=ID）
    ・模型：房主跑完整模擬（權威），加入端只送操作 + 畫房主送來的狀態
-   ・房主的邏輯高度 GAME_H 會傳給加入端，兩邊場地完全一致
+   ・v1.9：支援最多 4 人（Host + Peer 1..3，Net.peers[1..3]；Net.remote = Net.peers[1] 相容 2 人）、
+           斷線自動重連（autoReconnect / clientId 保留原座位）、Net.create() 多實例
    ============================================================ */
 
 const Net = {
+  _makeRemoteSlot(id) {
+    return {
+      id: id || 1,
+      connected: false,
+      axis: { x: 0, y: 0, mag: 0 },
+      down: {},
+      pressed: {},
+      moveAxis() {
+        const a = this.axis;
+        return a.mag > 0.06 ? { x: a.x, y: a.y, mag: a.mag } : { x: 0, y: 0, mag: 0 };
+      },
+      isDown(a) { return !!this.down[a]; },
+      justPressed(a) { return !!this.pressed[a]; },
+      clearPressed() { this.pressed = {}; },
+      set(msg) {
+        this.connected = true;
+        this.axis = msg.m || { x: 0, y: 0, mag: 0 };
+        this.down = msg.d || {};
+        const p = msg.p || {};
+        for (const k in p) if (p[k]) this.pressed[k] = true;
+      },
+      reset() {
+        this.connected = false;
+        this.axis = { x: 0, y: 0, mag: 0 };
+        this.down = {};
+        this.pressed = {};
+      },
+    };
+  },
   ws: null,
   role: null,          // 'host' | 'peer'
   room: '',
+  peerId: 0,           // host = 0；peer = 1, 2, 3（對應 P2, P3, P4）
+  maxPeers: 3,         // 最多 3 個加入端（共 4 人）
+  clientId: '',        // 斷線重連識別碼（確保重連拿回同一個 peerId）
   active: false,
   ready: false,
   isHost: false,
   isPeer: false,
-  status: 'idle',      // idle | connecting | waiting | playing | closed | error
+  status: 'idle',      // idle | connecting | waiting | playing | reconnecting | closed | error
   errMsg: '',
   sendT: 0,
-  latch: {},          // 加入端：把 justPressed 鎖住，避免送出間隔漏掉
+  latch: {},           // 加入端：把 justPressed 鎖住，避免送出間隔漏掉
   snap: null,
   snapAge: 0,
   snapCount: 0,
   lastRecv: 0,
   sentCount: 0,
+  connectedPeers: [],  // 目前連線中的 peerId 陣列，例 [1, 2]
 
-  /* 加入端 → 房主的輸入 */
-  remote: {
-    axis: { x: 0, y: 0, mag: 0 },
-    down: {},
-    pressed: {},
-    moveAxis() {
-      const a = this.axis;
-      return a.mag > 0.06 ? { x: a.x, y: a.y, mag: a.mag } : { x: 0, y: 0, mag: 0 };
-    },
-    isDown(a) { return !!this.down[a]; },
-    justPressed(a) { return !!this.pressed[a]; },
-    clearPressed() { this.pressed = {}; },
-    set(msg) {
-      this.axis = msg.m || { x: 0, y: 0, mag: 0 };
-      this.down = msg.d || {};
-      const p = msg.p || {};
-      for (const k in p) if (p[k]) this.pressed[k] = true;
-    },
+  /* 斷線自動重連設定（v1.9） */
+  autoReconnect: false,
+  maxRetries: 5,
+  retryDelay: 0.6,     // 秒
+  retryCount: 0,
+  reconnectedCount: 0,
+  _manualClose: false,
+  _retryTimer: null,
+
+  /* 加入端 → 房主的輸入（peers[1..3]；remote 指向 peers[1] 保持 100% 向下相容） */
+  peers: null,
+  remote: null,
+
+  _initPeers() {
+    this.peers = {
+      1: this._makeRemoteSlot(1),
+      2: this._makeRemoteSlot(2),
+      3: this._makeRemoteSlot(3),
+    };
+    this.remote = this.peers[1];
+    this.connectedPeers = [];
+    if (!this.clientId) {
+      this.clientId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID() : 'c_' + this.makeCode() + '_' + Math.random().toString(36).slice(2);
+    }
+    return this;
+  },
+
+  /* 產生獨立的 Net 實例（同頁多連線測試或分割畫面用） */
+  create() {
+    const n = Object.create(Net);
+    n.ws = null;
+    n.role = null;
+    n.room = '';
+    n.peerId = 0;
+    n.clientId = '';
+    n.active = false;
+    n.ready = false;
+    n.isHost = false;
+    n.isPeer = false;
+    n.status = 'idle';
+    n.errMsg = '';
+    n.sendT = 0;
+    n.latch = {};
+    n.snap = null;
+    n.snapAge = 0;
+    n.snapCount = 0;
+    n.lastRecv = 0;
+    n.sentCount = 0;
+    n.retryCount = 0;
+    n.reconnectedCount = 0;
+    n._manualClose = false;
+    n._retryTimer = null;
+    n._initPeers();
+    return n;
+  },
+
+  /* 取得指定加入端（1..3）的輸入狀態 */
+  peer(id) {
+    if (!this.peers) this._initPeers();
+    return this.peers[id || 1] || this.peers[1];
+  },
+
+  /* 清空所有加入端的單帧按鍵（房主每帧結束時可呼叫） */
+  clearAllPressed() {
+    if (!this.peers) return;
+    for (const k in this.peers) this.peers[k].clearPressed();
+  },
+
+  /* 目前房間總人數（含房主，1 ~ 4） */
+  playerCount() {
+    if (!this.active) return 0;
+    return 1 + (this.connectedPeers ? this.connectedPeers.length : 0);
   },
 
   /* 診斷列：?debug=1 或加入端超過 1.5 秒沒收到狀態 */
@@ -3207,41 +3991,94 @@ const Net = {
   },
 
   /* ---------- 連線 ---------- */
-  connect(role, room) {
-    this.close();
+  connect(role, room, opt) {
+    opt = opt || {};
+    if (!this.peers) this._initPeers();
+    if (!opt._isRetry) {
+      this.close();
+      this.retryCount = 0;
+      if (opt.autoReconnect != null) this.autoReconnect = !!opt.autoReconnect;
+    }
+    this._manualClose = false;
     this.role = role;
     this.room = room;
     this.isHost = role === 'host';
     this.isPeer = role === 'peer';
-    this.status = 'connecting';
+    if (this.isHost) this.peerId = 0;
+    this.status = opt._isRetry ? 'reconnecting' : 'connecting';
     this.errMsg = '';
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&role=${role}`;
+    const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&role=${role}&cid=${encodeURIComponent(this.clientId)}`;
     let ws;
     try { ws = new WebSocket(url); } catch (e) { this.status = 'error'; this.errMsg = '無法建立連線'; return; }
     this.ws = ws;
     this.active = true;
 
-    ws.onopen = () => { this.status = 'waiting'; };
+    ws.onopen = () => {
+      this.status = 'waiting';
+    };
     ws.onerror = () => {
-      this.status = 'error';
-      this.errMsg = '連不上伺服器（要用 python tools/serve.py 開啟，不能直接雙擊檔案）';
+      if (!this.autoReconnect || this.retryCount >= this.maxRetries) {
+        this.status = 'error';
+        this.errMsg = '連不上伺服器（要用 python tools/serve.py 開啟，不能直接雙擊檔案）';
+      }
     };
     ws.onclose = () => {
-      if (this.status !== 'error') this.status = 'closed';
+      if (this.ws !== ws) return;
       this.ready = false;
+      if (!this._manualClose && this.autoReconnect && this.retryCount < this.maxRetries) {
+        this.retryCount++;
+        this.status = 'reconnecting';
+        clearTimeout(this._retryTimer);
+        this._retryTimer = setTimeout(() => {
+          if (!this._manualClose && this.room && this.role) {
+            this.connect(this.role, this.room, { _isRetry: true });
+          }
+        }, Math.round(this.retryDelay * 1000));
+        return;
+      }
+      if (this.status !== 'error') this.status = 'closed';
       if (this.onDrop) this.onDrop('closed');
     };
-    ws.onmessage = (ev) => this.onMessage(ev.data);
+    ws.onmessage = (ev) => { if (this.ws === ws) this.onMessage(ev.data); };
+  },
+
+  /* 手動立即重連 */
+  reconnect() {
+    if (!this.role || !this.room) return false;
+    clearTimeout(this._retryTimer);
+    if (this.ws) {
+      const old = this.ws;
+      this.ws = null;
+      try { old.close(); } catch (e) {}
+    }
+    this.connect(this.role, this.room, { _isRetry: true });
+    return true;
+  },
+
+  /* 模擬網路瞬斷（測試自動重連用） */
+  simulateDrop() {
+    if (this.ws) {
+      try { this.ws.close(); } catch (e) {}
+    }
   },
 
   close() {
-    if (this.ws) { try { this.ws.close(); } catch (e) {} }
-    this.ws = null;
+    this._manualClose = true;
+    clearTimeout(this._retryTimer);
+    if (this.ws) {
+      const old = this.ws;
+      this.ws = null;
+      try { old.close(); } catch (e) {}
+    }
     this.active = false;
     this.ready = false;
     this.status = 'idle';
     this.snap = null;
+    this.connectedPeers = [];
+    if (this.peers) {
+      for (const k in this.peers) this.peers[k].reset();
+    }
   },
 
   send(obj) {
@@ -3250,21 +4087,72 @@ const Net = {
     }
   },
 
+  _syncPeerList(list) {
+    if (!Array.isArray(list)) return;
+    this.connectedPeers = list.slice();
+    if (this.peers) {
+      for (const k in this.peers) {
+        this.peers[k].connected = this.connectedPeers.indexOf(Number(k)) >= 0;
+      }
+    }
+  },
+
   onMessage(raw) {
     let m;
     try { m = JSON.parse(raw); } catch (e) { return; }
 
     if (m.t === 'sys') {
-      if (m.msg === 'room-ready') {
-        this.ready = true;
-        if (this.onReady) this.onReady();
-        if (this.isPeer) this.send({ t: 'need' });     // 立刻要一份狀態
+      if (m.peers) this._syncPeerList(m.peers);
+      if (m.msg === 'assigned') {
+        this.peerId = m.peerId || 1;
+        if (m.reconnected) {
+          this.reconnectedCount++;
+          if (this.onReconnect) this.onReconnect(this.peerId);
+        }
+        return;
       }
-      if (m.msg === 'peer-joined') { this.ready = true; this.onReady(); }
+      if (m.msg === 'room-full') {
+        this._manualClose = true;
+        this.status = 'error';
+        this.errMsg = '房間已滿（上限 4 人）';
+        if (this.onDrop) this.onDrop('room-full');
+        return;
+      }
+      if (m.msg === 'room-ready') {
+        this.retryCount = 0;
+        if (m.peerId && this.isPeer) this.peerId = m.peerId;
+        this.ready = true;
+        this.status = 'playing';
+        if (this.onReady) this.onReady(m.peerId || 1);
+        if (this.isPeer) this.send({ t: 'need', id: this.peerId || 1 });     // 立刻要一份狀態
+      }
+      if (m.msg === 'peer-joined') {
+        const pid = m.peerId || 1;
+        if (this.connectedPeers.indexOf(pid) < 0) this.connectedPeers.push(pid);
+        if (this.peers && this.peers[pid]) this.peers[pid].connected = true;
+        this.ready = true;
+        this.status = 'playing';
+        if (m.reconnected) {
+          this.reconnectedCount++;
+          if (this.onReconnect) this.onReconnect(pid);
+        }
+        if (this.onReady) this.onReady(pid);
+      }
       if (m.msg === 'peer-left') {
-        this.ready = false;
-        this.snap = null;
-        if (this.onDrop) this.onDrop('peer-left');
+        const pid = m.peerId || 1;
+        if (m.role === 'host') {
+          this.ready = false;
+          this.snap = null;
+          if (this.onDrop) this.onDrop('peer-left', 0);
+        } else {
+          if (!m.peers) {
+            this.connectedPeers = this.connectedPeers.filter(x => x !== pid);
+          }
+          if (this.peers && this.peers[pid]) this.peers[pid].reset();
+          this.ready = this.connectedPeers.length > 0;
+          if (!this.ready) this.snap = null;
+          if (this.onDrop) this.onDrop('peer-left', pid);
+        }
       }
       return;
     }
@@ -3276,7 +4164,8 @@ const Net = {
     }
 
     if (m.t === 'i' && this.isHost) {
-      this.remote.set(m);
+      const pid = m.id || 1;
+      if (Number.isInteger(pid) && pid >= 1 && pid <= 3) this.peer(pid).set(m);
       return;
     }
 
@@ -3305,18 +4194,21 @@ const Net = {
   /* ---- 以下是遊戲要接的鉤子 ---- */
   produceSnapshot: null,     // 房主：() => 要送出的物件
   onSnapshot: null,          // 加入端：(snap) => {}
-  onDrop: null,              // 對方離線：(reason) => {}
-  onReady: null,             // 兩端都連上
+  onDrop: null,              // 對方離線：(reason, peerId) => {}
+  onReady: null,             // 連上：(peerId) => {}
+  onReconnect: null,         // 斷線後重連成功：(peerId) => {}
   onHello: null,             // 加入端收到房主的 hello
 
   /* ---------- 加入端：送操作 ---------- */
-  /* 通用：把「這一帧的按鍵狀態」整包送出去（動作名稱由遊戲自己定義） */
-  sendInput() {
-    const mv = Input.moveAxis();
+  /* 通用：把「這一帧的按鍵狀態」整包送出去（動作名稱由遊戲自己定義，帶上自己的 peerId） */
+  sendInput(customInput) {
+    const src = customInput || (typeof Input !== 'undefined' ? Input : null);
+    const mv = src && src.moveAxis ? src.moveAxis() : { x: 0, y: 0, mag: 0 };
     this.send({
       t: 'i',
+      id: this.peerId || 1,
       m: { x: Math.round(mv.x * 100) / 100, y: Math.round(mv.y * 100) / 100, mag: Math.round(mv.mag * 100) / 100 },
-      d: Input.down,
+      d: (src && src.down) || {},
       p: this.latch,
     });
     this.latch = {};
@@ -3333,7 +4225,9 @@ const Net = {
       }
     } else if (this.isPeer) {
       /* 每一帧都記下按鍵（justPressed 只存在 16ms，40Hz 送出會漏） */
-      for (const a in Input.pressed) if (Input.pressed[a]) this.latch[a] = 1;
+      if (typeof Input !== 'undefined' && Input.pressed) {
+        for (const a in Input.pressed) if (Input.pressed[a]) this.latch[a] = 1;
+      }
       if (this.sendT > 0.025) {          // 40Hz 送操作
         this.sendT = 0;
         this.sendInput();
@@ -3342,6 +4236,8 @@ const Net = {
     }
   },
 };
+
+Net._initPeers();
 
 /* ---- engine/namespace.js ---- */
 /* ============================================================
