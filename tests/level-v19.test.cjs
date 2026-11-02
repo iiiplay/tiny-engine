@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+function load(){let copied;const c=vm.createContext({btoa,atob,TextEncoder,TextDecoder,navigator:{clipboard:{writeText:s=>(copied=s,Promise.resolve())}}});for(const f of ['grid','level'])vm.runInContext(fs.readFileSync(`engine/${f}.js`,'utf8'),c);vm.runInContext('this.L=Level;this.Lib=LevelLib',c);return {c,getCopy:()=>copied}}
+test('level grid passes terrain costs without changing wall defaults',()=>{const {c}=load(),l=c.L.create({cols:3,rows:2});l.set(1,0,2);l.set(2,0,3);const g=l.grid({costs:{2:4}});assert.equal(g.solid(1,0),false);assert.equal(g.costAt(1,0),4);assert.equal(g.solid(2,0),true)});
+test('share returns level code and copies it',()=>{const {c,getCopy}=load(),lv=c.L.create({cols:3,rows:2});const code=c.Lib.share(lv);assert.equal(getCopy(),code);assert.equal(c.Lib.decode(code).cols,3)});

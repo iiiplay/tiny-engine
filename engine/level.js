@@ -185,9 +185,9 @@ const Level = {
     const tiles = new Uint8Array(this.tiles.length);
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i];
-      tiles[i] = (!t || (pass && pass[t])) ? 0 : 1;
+      tiles[i] = (!t || (pass && pass[t])) ? 0 : ((opt.costs && opt.costs[t] > 0) ? t : 1);
     }
-    const g = Grid.createFromTiles(tiles, this.cols, this.rows, { cell: this.cell });
+    const g = Grid.createFromTiles(tiles, this.cols, this.rows, { cell: this.cell, costs: opt.costs });
     if (opt.block) g.setBlock(opt.block);
     return g;
   },
@@ -444,6 +444,14 @@ const LevelLib = {
     return items;
   },
   clear() { Save.del(this.KEY); return this; },
+
+  share(lv) {
+    const code = this.encode(lv);
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).catch(() => {});
+    }
+    return code;
+  },
 
   /* 驗證 + 存進關卡庫（匯入用） */
   importCode(code, name) {
