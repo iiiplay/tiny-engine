@@ -530,7 +530,10 @@ const Grid = {
 
   countFree() {
     let n = 0;
-    for (let i = 0; i < this.tiles.length; i++) if (!this.tiles[i]) n++;
+    for (let i = 0; i < this.tiles.length; i++) {
+      const t = this.tiles[i], cost = this.costs && this.costs[t];
+      if (!t || (cost > 0 && isFinite(cost))) n++;
+    }
     return n;
   },
 

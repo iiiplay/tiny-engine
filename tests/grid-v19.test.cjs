@@ -18,9 +18,15 @@ test('weighted paths avoid expensive terrain and accept fractional costs', () =>
 test('weighted field, costs, maxNodes, and isolated maps', () => {
   const g = grid(); g.setTile(1, 0, 2).setCost(2, 3);
   assert.equal(g.solid(1,0), false);
+  assert.equal(g.countFree(), g.freeCells().length);
   assert.equal(g.weightedField({from:{cx:0,cy:0}})[g.idx(1,0)], 3);
   assert.equal(g.findPath({cx:0,cy:0},{cx:4,cy:2},{maxNodes:1}).length, 0);
   assert.equal(grid().solid(1,0), false);
+});
+test('nested BFS on the same grid does not overwrite an outer queue', () => {
+  const g=grid(), expected=Array.from(g.field({from:{cx:0,cy:0}})); let nested=false;
+  const actual=g.field({from:{cx:0,cy:0},block:()=>{if(!nested){nested=true;g.field({from:{cx:4,cy:2}})}return false}});
+  assert.deepEqual(Array.from(actual), expected);
 });
 test('diagonal paths and downhill do not cut blocked corners', () => {
   const g = grid(); g.setTile(1,0,1); g.setTile(0,1,1);
