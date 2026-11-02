@@ -42,7 +42,13 @@ const Fx = {
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
       p.life -= dt;
-      if (p.life <= 0) { this.pool.push(p); this.parts.splice(i, 1); continue; }
+      if (p.life <= 0) {
+        this.pool.push(p);
+        const last = this.parts.length - 1;
+        if (i !== last) this.parts[i] = this.parts[last];
+        this.parts.pop();
+        continue;
+      }
       p.vy += p.grav * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
