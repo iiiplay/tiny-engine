@@ -1,32 +1,10 @@
 'use strict';
 /* ============================================================
-   engine/edit.js — 格子關卡編輯器（畫格存 JSON）  v1.6
-   ------------------------------------------------------------
-   給「關卡資料是格子的遊戲」用的最小編輯器：滑鼠塗格子、選色盤、存檔。
-
-   用法（遊戲端）：
-     Edit.init({
-       level: Level,                     // 要編輯的 Level（會直接改它）
-       palette: [                        // 色盤：第一個是「橡皮擦/可走」
-         { v: 0, name: '地板', color: '#b8d94a' },
-         { v: 1, name: '牆',   color: '#5b6b8a' },
-       ],
-       cell: 16,                         // 幾 px 一格
-       origin: { x: 0, y: 16 },          // 地圖左上角在畫面上的位置
-       canvas: 'game',                   // 要吃哪個 canvas 的滑鼠
-       onChange: (lv) => {},             // 每次塗完（給遊戲重建 Grid 用）
-       onSave: (json) => {},             // 按 S 存檔時（預設存 localStorage + console）
-       key: 'tiny-level',                // localStorage key
-     });
-     Edit.toggle();           // 開 / 關
-     Edit.draw();             // 每帧最後呼叫（畫格線、色盤、提示）
-     Edit.update(dt);         // 可選（沒有動畫，留給之後）
-
-   操作：
-     左鍵塗 / 拖曳連續塗　　右鍵（或 Shift+左鍵）擦成 0
-     1~9 選色盤　　滾輪 / Q E 換色　　G 切格線
-     Ctrl+Z 復原　　S 存檔（localStorage + console）　　X 匯出 JSON 到 console
-     E 或 Esc 關閉編輯器（遊戲端自己決定要不要綁）
+   engine/edit.js — 格子關卡編輯器（畫格 / 標記 / 物件 / 存 JSON）
+   v1.6：塗格、色盤、Ctrl+Z、存檔
+   v1.7.1：markers（入口/出口寫進 meta）
+   v1.8：objectTypes（點格子放/收 Level.objects）
+   v1.9：Edit.draw() 完整繪製標記、物件與全色盤；Ctrl+Z 同步復原格子、標記與物件
    ============================================================ */
 
 const Edit = {
@@ -82,13 +60,19 @@ const Edit = {
 
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled) return;
+      if (this.hitPalette(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const c = toCell(e);
+      if (!this.level || !this.level.inside(c.cx, c.cy)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (this.hitPalette(e)) return;
       this.pushUndo();
       this.painting = (e.button === 2 || e.shiftKey) ? -1 : 1;
       this.lastPaint = null;
-      this.paint(toCell(e));
+      this.paint(c);
     }, true);
 
     canvas.addEventListener('pointermove', (e) => {
@@ -123,7 +107,7 @@ const Edit = {
   },
 
   /* ---------------- 色盤 ---------------- */
-  /* 色盤項目 = 格子色 + 標記（標記接在後面） */
+  /* 色盤項目 = 格子色 + 標記 + 物件 */
   paletteItems() {
     const items = [];
     for (let i = 0; i < this.palette.length; i++) {
@@ -143,7 +127,11 @@ const Edit = {
   },
 
   paletteRect(i) {
-    const w = 56, h = 14, gap = 2;
+    const n = Math.max(1, this.paletteItems().length);
+    const gap = 2;
+    const maxW = Math.floor((GAME_W - 8 - (n - 1) * gap) / n);
+    const w = Math.max(26, Math.min(56, maxW));
+    const h = 14;
     const y = this.paletteY != null ? this.paletteY : GAME_H - h - 3;
     return { x: 4 + i * (w + gap), y, w, h };
   },
@@ -163,16 +151,27 @@ const Edit = {
     return false;
   },
 
-  /* ---------------- 畫格子 ---------------- */
+  /* ---------------- 畫格子 / 復原 ---------------- */
   pushUndo() {
     if (!this.level) return;
-    this.undoStack.push(Uint8Array.from(this.level.tiles));
+    this.undoStack.push({
+      tiles: Uint8Array.from(this.level.tiles),
+      meta: JSON.parse(JSON.stringify(this.level.meta || {})),
+      objects: JSON.parse(JSON.stringify(this.level.objects || [])),
+    });
     if (this.undoStack.length > 60) this.undoStack.shift();
   },
 
   undo() {
     if (!this.undoStack.length || !this.level) return false;
-    this.level.tiles = this.undoStack.pop();
+    const snap = this.undoStack.pop();
+    if (snap instanceof Uint8Array) {
+      this.level.tiles = snap;
+    } else {
+      this.level.tiles = snap.tiles;
+      this.level.meta = snap.meta || {};
+      this.level.objects = snap.objects || [];
+    }
     this.changed();
     return true;
   },
@@ -194,8 +193,16 @@ const Edit = {
       return true;
     }
     if (item.kind === 'mark') {
-      // 標記（入口／出口…）不算格子，寫進 level.meta
-      if (this.painting < 0) return false;
+      // 標記（入口／出口…）不算格子，寫進 level.meta；右鍵點同位置可清除標記
+      if (this.painting < 0) {
+        const cur = this.level.meta[item.key];
+        if (cur && cur[0] === c.cx && cur[1] === c.cy) {
+          delete this.level.meta[item.key];
+          this.changed();
+          return true;
+        }
+        return false;
+      }
       this.level.meta[item.key] = [c.cx, c.cy];
       this.changed();
       return true;
@@ -227,7 +234,7 @@ const Edit = {
   exportJSON() {
     if (!this.level) return '';
     const json = this.level.serialize(true);
-    console.log('[edit] 關卡 JSON：\\n' + json);
+    console.log('[edit] 關卡 JSON：\n' + json);
     if (typeof HUD !== 'undefined' && HUD.toast) HUD.toast('JSON 已印到 console');
     this.lastJSON = json;
     return json;
@@ -267,9 +274,49 @@ const Edit = {
       ctx.globalAlpha = 1;
     }
 
+    /* 物件層（Level.objects） */
+    if (this.level.objects && this.level.objects.length) {
+      const objDefs = this.objectTypes || [];
+      for (const o of this.level.objects) {
+        if (!this.level.inside(o.cx, o.cy)) continue;
+        const def = objDefs.find(d => d.type === o.type);
+        const col = (def && def.color) || '#ffd45e';
+        const label = ((def && def.name) || o.type || '?').slice(0, 2);
+        const px = ox + o.cx * T + T / 2;
+        const py = oy + o.cy * T + T / 2;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(3, T * 0.34), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#0b0f18';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        text(label, px, py + 0.5, { size: 5, color: '#0b0f18', align: 'center', baseline: 'middle', shadow: false });
+      }
+    }
+
+    /* 標記層（level.meta[key] = [cx, cy]） */
+    if (this.markers && this.level.meta) {
+      for (const m of this.markers) {
+        const pt = this.level.meta[m.key];
+        if (!Array.isArray(pt) || pt.length < 2) continue;
+        const cx = pt[0], cy = pt[1];
+        if (!this.level.inside(cx, cy)) continue;
+        const px = ox + cx * T, py = oy + cy * T;
+        ctx.strokeStyle = m.color || '#e5484d';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px + 1.5, py + 1.5, T - 3, T - 3);
+        roundRect(px + 1, py + 1, T - 2, 7, 2, m.color || '#e5484d');
+        text((m.name || m.key).slice(0, 2), px + T / 2, py + 4.5, {
+          size: 4.8, color: '#ffffff', align: 'center', baseline: 'middle', shadow: false,
+        });
+      }
+    }
+
     /* 游標 */
+    const items = this.paletteItems();
     if (this.hover && this.level.inside(this.hover.cx, this.hover.cy)) {
-      const p = this.palette[this.sel];
+      const p = items[this.sel];
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = p ? p.color : '#fff';
       ctx.fillRect(ox + this.hover.cx * T + 1, oy + this.hover.cy * T + 1, T - 2, T - 2);
@@ -279,14 +326,24 @@ const Edit = {
       ctx.strokeRect(ox + this.hover.cx * T + 0.5, oy + this.hover.cy * T + 0.5, T - 1, T - 1);
     }
 
-    /* 色盤 */
-    for (let i = 0; i < this.palette.length; i++) {
-      const p = this.palette[i];
+    /* 色盤（含格子、標記、物件） */
+    for (let i = 0; i < items.length; i++) {
+      const p = items[i];
       const b = this.paletteRect(i);
       roundRect(b.x, b.y, b.w, b.h, 3, 'rgba(12,18,14,0.9)', i === this.sel ? '#ffd45e' : '#5d7a52');
       ctx.fillStyle = p.color;
-      ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
-      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5.5, color: '#f6ffe6', shadow: false });
+      if (p.kind === 'object') {
+        ctx.beginPath();
+        ctx.arc(b.x + 7, b.y + 7, 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.kind === 'mark') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(b.x + 3.5, b.y + 3.5, 7, 7);
+      } else {
+        ctx.fillRect(b.x + 3, b.y + 3, 8, 8);
+      }
+      text((i + 1) + ' ' + p.name, b.x + 13, b.y + 4, { size: 5, color: '#f6ffe6', shadow: false });
     }
 
     /* 提示 */
