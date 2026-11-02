@@ -14,6 +14,20 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 
 ## Demo（跑起來看最快）
 
+**Slot 展示：[翠光秘庫](demo/slot.html)** — 啟動伺服器後開啟 `http://localhost:8766/demo/slot.html`。
+5 軸 × 3 列、20 線，使用 PNG 素材；支援 Wild／Scatter、免費旋轉、下注調整、自動 10 局、快速模式、音效及 FPS。
+初始贈送 2,000 遊戲幣；按空白鍵旋轉、A 開關自動旋轉、M 靜音。玩法按鈕內含賠付表、權重與全部連線。
+核心規則與存檔復原放在 `demo/slot-rules.js`，不依賴畫面；驗收：`node --test tests/slot.test.cjs`、`python tools/slot.py <url>`。
+素材來源見 [`demo/assets/slot/CREDITS.md`](demo/assets/slot/CREDITS.md)。
+
+**新增可玩展示：[光種森林](demo/playground.html)** — 啟動伺服器後開啟
+`http://localhost:8766/demo/playground.html`。WASD／方向鍵移動、Shift 衝刺、Space／J 攻擊；
+手機提供搖桿與雙按鈕。常駐顯示實際 FPS、幀時間曲線、更新／繪製耗時，右上可切換 24／80／160 隻生物。
+目標是收集 8 顆光種；`P` 暫停、`R` 重來。驗收：`python tools/playground.py <url>`。
+
+Sprite 版使用 31 張現有 PNG：主角四方向待機／走路／揮劍、史萊姆逐格動畫、樹木與拾取物等。
+第三方素材來源與使用範圍見 [`demo/assets/forest-sprites/CREDITS.md`](demo/assets/forest-sprites/CREDITS.md)，不屬於引擎 MIT 授權。
+
 `demo/` 是一個 300 行的完整小遊戲，示範引擎的每一項核心能力：
 
 - **捲動鏡頭**：世界 900×620，畫面 400×自動高，鏡頭平滑跟隨並卡在世界邊界內
@@ -129,6 +143,9 @@ Camera.visible(x, y, w, h);                              // 粗剔除，畫之�
 
 // 2) 固定時間步（決定性 / 連線 / 重播）
 Loop.fixedStep = 1 / 60;      // >0 啟用；落後時最多補跑 Loop.maxSteps 次
+Loop.maxDelta = 0.25;        // 單次最多接納 250ms；超額時間捨棄，避免停頓後無限追趕
+// justPressed 在一次邏輯更新後消耗；零次更新時保留，多次補跑時不重複觸發。
+// 變動時間步（fixedStep=0）也會拆成每步最多 50ms，仍受 maxSteps 限制。
 
 // 3) 尋路（8 方向 A*，不切角、自動平滑）
 Pathfind.build({ cell: 8, w: WORLD.w, h: WORLD.h });      // 場地變了要重建
@@ -240,9 +257,16 @@ Sfx.stopMusic();        // demo 裡按 M 可以開關
 
 1. 所有 `engine/*.js`、`demo/*.js` 的 `node --check`
 2. 所有工具的 Python 語法檢查
-3. 起伺服器 → `tools/shot.py`（載入/開始/移動/鏡頭/F3，**有 console 錯誤就失敗**）
-4. `tools/soak.py`（亂走 8 秒）
-5. `tools/bench.py`（大地圖 + 剔除，**fps < 45 就失敗**）
+3. `node --test tests/runtime.test.cjs`（單次按鍵／多鍵／背景時間／時鐘交接）
+4. `tools/pack.py --check`（單檔產物與來源同步）
+5. `tests/tool_failures.py`（注入 console.error／頁面例外，確認驗收回傳失敗）
+6. 起伺服器 → `tools/shot.py`、`tools/soak.py`（冒煙測試與亂走 8 秒）
+7. `tools/runtime.py`（1280×720 桌面、375×667 手機：雙鍵／觸控／搖桿可見）
+8. `tools/nettest.py`、`tools/v13.py`～`tools/v16.py`（雙端連線與全部版本驗收）
+9. `tools/bench.py`（大地圖 + 剔除，**fps < 45 或瀏覽器錯誤就失敗**）
+
+驗收腳本遇到 JS 例外、`console.error` 或偵測到的載入失敗時回傳非零 exit code。
+v1.6 工具測試自行產生圖片與遊戲程式，不依賴相鄰遊戲專案或第三方素材。
 
 ## 效能（實測，Chromium headless）
 

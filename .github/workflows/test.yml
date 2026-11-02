@@ -32,10 +32,13 @@ jobs:
       - name: Python 語法檢查
         run: |
           set -e
-          for f in tools/*.py demo/tools/*.py; do
+          for f in tools/*.py demo/tools/*.py tests/*.py; do
             echo "check $f"
             python -c "import ast,sys; ast.parse(open('$f',encoding='utf-8').read())"
           done
+
+      - name: 輸入／時間步／Slot 規則回歸測試
+        run: node --test tests/runtime.test.cjs tests/slot.test.cjs
 
       - name: 安裝 Playwright
         run: |
@@ -45,6 +48,9 @@ jobs:
 
       - name: 單檔打包同步檢查
         run: python tools/pack.py --check
+
+      - name: 驗收腳本負向測試（錯誤必須回傳失敗）
+        run: python tests/tool_failures.py
 
       - name: 起伺服器
         run: |
@@ -63,11 +69,29 @@ jobs:
       - name: 自動遊玩壓力測試
         run: python tools/soak.py 8 http://localhost:8766/demo/
 
+      - name: 桌面／手機輸入回歸（雙鍵 / 觸控搖桿）
+        run: python tools/runtime.py http://localhost:8766/demo/
+
+      - name: 光種森林試玩（FPS / 玩家控制 / 衝刺 / 攻擊 / 觸控）
+        run: python tools/playground.py http://localhost:8766/demo/playground.html
+
+      - name: 翠光秘庫 Slot（結算 / 存檔恢復 / 免費旋轉 / 自動 / 觸控）
+        run: python tools/slot.py http://localhost:8766/demo/slot.html
+
       - name: 區網連線（兩個分頁：房主 + 加入端）
         run: python tools/nettest.py http://localhost:8766/demo/net.html
 
       - name: v1.3 驗收（Scene / UI / 離線 / 節流）
         run: python tools/v13.py http://localhost:8766/demo/v13.html
+
+      - name: v1.4 驗收（翻轉 / 旋轉 / 錨點）
+        run: python tools/v14.py http://localhost:8766/demo/v14.html
+
+      - name: v1.5 驗收（格子 / BFS / 鏡頭）
+        run: python tools/v15.py http://localhost:8766/demo/v15.html
+
+      - name: v1.6–v1.8 驗收（關卡 / 編輯器 / 關卡碼 / 工具）
+        run: python tools/v16.py http://localhost:8766/demo/v16.html
 
       - name: 效能（大地圖 + 剔除 + A* 節流，fps 低於 45 就失敗）
         run: python tools/bench.py http://localhost:8766/demo/bench.html

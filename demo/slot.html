@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0c1d1b"><title>翠光秘庫 · TinyEngine Slot</title>
+  <link rel="stylesheet" href="slot.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="playground.html"><span class="monogram">te</span><span>TINY ENGINE<small>THE ARCADE COLLECTION</small></span></a><div class="header-right"><span class="demo-tag">遊戲幣試玩</span><span class="fps"><i></i><b id="fps">—</b> FPS</span><button id="sound" class="icon-button" aria-label="關閉音效" aria-pressed="false">音效 開</button></div></header>
+  <main>
+    <div class="title-row"><div><div class="eyebrow">NO. 02 / PIXEL SLOT EXPERIENCE</div><h1>翠光秘庫 <span>EMERALD VAULT</span></h1></div><button id="rules-button" class="text-button">玩法與賠付表 <span>↗</span></button></div>
+    <div class="layout">
+      <section class="cabinet" aria-label="5 軸 3 列拉霸機">
+        <div class="machine-top"><span><i></i> 5 REELS <em>·</em> 20 PAYLINES</span><span id="mode">BASE GAME</span></div>
+        <div class="balance-row"><div><label>遊戲幣餘額</label><strong id="balance">2,000</strong></div><div class="win-stat"><label>本次贏得</label><strong id="win">0</strong></div><div><label>免費旋轉</label><strong id="free">00 <small>次</small></strong></div></div>
+        <div class="reel-surround"><div class="side-jewel left" aria-hidden="true">◆</div><div class="reel-window"><canvas id="game" aria-label="五軸轉輪。按空白鍵或旋轉按鈕開始。"></canvas></div><div class="side-jewel right" aria-hidden="true">◆</div><div class="reel-labels" aria-hidden="true"><span>I</span><span>II</span><span>III</span><span>IV</span><span>V</span></div></div>
+        <div class="message" id="message" role="status">秘庫已開啟。讓好運開始流轉。</div>
+        <div class="control-deck">
+          <div class="bet-control"><label>總下注 <small>20 線</small></label><div><button id="bet-minus" aria-label="降低下注">−</button><strong id="bet">20</strong><button id="bet-plus" aria-label="提高下注">＋</button></div></div>
+          <button id="spin" class="spin-button"><span class="spin-symbol" aria-hidden="true">↻</span><span id="spin-label">旋轉<small>SPIN</small></span></button>
+          <div class="auto-controls"><button id="auto" aria-pressed="false">自動 <span id="auto-count">10</span></button><button id="fast" aria-pressed="false">快速 <span id="fast-state">關</span></button></div>
+        </div>
+        <div class="machine-foot"><span><kbd>SPACE</kbd> 旋轉 <span class="desktop-only">／ <kbd>A</kbd> 自動</span></span><span id="save-status">進度自動保存在本機</span></div>
+      </section>
+      <aside class="sidebar">
+        <section class="bonus-card"><div class="eyebrow">UNLOCK THE VAULT</div><div class="key-art"><img src="assets/slot/scatter.png" alt=""><span>SCATTER</span></div><h2>三把鑰匙，<br>開啟更多可能。</h2><p>任意位置出現 3 個 SCATTER，<br>贈送 8 次免費旋轉。</p><button id="gift">體驗 8 次免費旋轉 <span>→</span></button><small id="gift-note">每次重置可領一次體驗贈送</small></section>
+        <section class="results-card"><div class="section-heading"><h2>中獎紀錄</h2><span id="spins">0 SPINS</span></div><div id="results"><p class="empty">每條連線的小驚喜，<br>都會記錄在這裡。</p></div></section>
+        <button id="reset" class="reset-button">重置遊戲幣與進度 ↺</button>
+      </aside>
+    </div>
+    <footer><span>PNG SPRITES <i>✦</i> CANVAS 2D <i>✦</i> TINY ENGINE</span><span>僅供遊戲幣試玩 · 初始贈送 2,000 枚</span></footer>
+  </main>
+  <dialog id="rules"><div class="dialog-heading"><div><div class="eyebrow">THE VAULT RULES</div><h2>玩法與賠付表</h2></div><button id="rules-close" aria-label="關閉玩法">×</button></div><p>20 條固定線，從最左軸起連續 3 個以上同符號即中獎。表中倍數乘以「每線下注＝總下注 ÷ 20」。同線僅取最高派彩，所有中獎線可累加。</p><table><thead><tr><th>符號</th><th>3 個</th><th>4 個</th><th>5 個</th></tr></thead><tbody id="paytable"></tbody></table><div class="rule-notes"><p><b>WILD 聖劍</b> 替代普通符號；不替代 SCATTER。Wild 自身也可連線得獎。</p><p><b>SCATTER 鑰匙</b> 任意位置出現 3／4／5 個以上，支付總下注 2／5／10 倍，並贈送 8／12／20 次免費旋轉。</p><p><b>免費旋轉</b> 使用觸發時的下注，不扣遊戲幣，期間可再次觸發。按旋轉逐次遊玩，或啟用自動旋轉。領取體驗贈送也使用目前下注。</p><p>每格獨立抽樣，權重：金幣 26、翡翠 22、紅玉 18、生命之心 14、寶箱 10、Wild 6、Scatter 4。自動旋轉每次執行 10 局，可隨時取消後續旋轉。</p></div><div class="line-heading">20 條連線路徑</div><div id="line-map"></div></dialog>
+  <script src="../engine/dist/tiny-engine.js"></script><script src="slot-rules.js"></script><script src="slot.js"></script>
+</body>
+</html>

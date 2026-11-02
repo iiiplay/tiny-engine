@@ -38,7 +38,7 @@ with sync_playwright() as p:
     print('pass %d / fail %d' % (res['pass'], res['fail']))
     b.close()
 
-fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+fatal = logs
 print('--- console ---')
 print('\n'.join(logs[:20]) or '(none)')
 

@@ -5,10 +5,11 @@
 """
 import json
 import os
-import shutil
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 from playwright.sync_api import sync_playwright
 
 try:
@@ -39,29 +40,31 @@ def check_true(name, got, detail=''):
 
 # ---------------- Python 端：gen_manifest ----------------
 print('== tools/gen_manifest.py')
-tmp = tempfile.mkdtemp(prefix='temf_')
-src_dir = os.path.join(tmp, 'art')
-os.makedirs(os.path.join(src_dir, 'enemy'), exist_ok=True)
-src_dir2 = os.path.join(tmp, 'art')
-# 借 tiny-keep 的素材（一格一張 + sheet 各一份）
-keep = os.path.join(os.path.dirname(ROOT), 'tiny-keep', 'assets', 'pack', 'ta')
-samples = [
-    ('Other/Misc/Grass.png', 'grass.png'),
-    ('Other/Items/Weapon/Arrow.png', 'arrow.png'),
-    ('Enemies/Goblin/Walk/Goblin_walk_right.png', 'enemy/Goblin_walk_right.png'),
-]
-used_assets = all(os.path.exists(os.path.join(keep, s)) for s, _ in samples)
-if used_assets:
-    for rel, dst in samples:
-        shutil.copyfile(os.path.join(keep, rel), os.path.join(src_dir, dst))
-    # 造一組逐格動畫：bomb_f0..f3
+def fixture_png(path, width=16, height=16):
+    """用標準庫產生測試圖片，驗收不依賴其他遊戲或第三方素材。"""
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    raw = (b'\x00' + bytes([80, 160, 40, 255]) * width) * height
+    png = (b'\x89PNG\r\n\x1a\n'
+           + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
+           + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+    with open(path, 'wb') as f:
+        f.write(png)
+
+
+with tempfile.TemporaryDirectory(prefix='temf_') as tmp:
+    src_dir = os.path.join(tmp, 'art')
+    os.makedirs(os.path.join(src_dir, 'enemy'))
+    fixture_png(os.path.join(src_dir, 'grass.png'))
+    fixture_png(os.path.join(src_dir, 'arrow.png'))
+    fixture_png(os.path.join(src_dir, 'enemy', 'Goblin_walk_right.png'), width=96)
     for i in range(4):
-        shutil.copyfile(os.path.join(keep, 'Other/Misc/Flower_pink.png'),
-                        os.path.join(src_dir, 'bomb_f%d.png' % i))
+        fixture_png(os.path.join(src_dir, 'bomb_f%d.png' % i))
     out_js = os.path.join(tmp, 'manifest.gen.js')
     r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_manifest.py'),
                         src_dir, '--fw', '16', '--out', out_js],
-                       capture_output=True, text=True, encoding='utf-8')
+                       capture_output=True, text=True, encoding='utf-8',
+                       env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
     check('gen_manifest 正常結束', r.returncode, 0)
     js = open(out_js, encoding='utf-8').read() if os.path.exists(out_js) else ''
     check_true('有產出 SRC / ANIM / SHEET_DEF',
@@ -72,19 +75,28 @@ if used_assets:
     # 語法檢查
     r2 = subprocess.run(['node', '--check', out_js], capture_output=True, text=True)
     check('產出的 JS 語法正確', r2.returncode, 0)
-else:
-    print('  skip（找不到 tiny-keep 素材）')
 
-# ---------------- Python 端：globals 掃描 ----------------
-print('== tools/globals.py')
-r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'globals.py'),
-                    os.path.join(os.path.dirname(ROOT), 'tiny-keep'), '--check', '--json'],
-                   capture_output=True, text=True, encoding='utf-8')
-check('globals.py --check 對 tiny-keep 是乾淨的', r.returncode, 0)
-if r.stdout.strip().startswith('{'):
+    # ---------------- Python 端：globals 掃描 ----------------
+    print('== tools/globals.py')
+    game_dir = os.path.join(tmp, 'game')
+    os.makedirs(game_dir)
+    game_js = os.path.join(game_dir, 'game.js')
+    with open(game_js, 'w', encoding='utf-8') as f:
+        f.write('const GameTest = {};\n')
+    def scan_globals():
+        return subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'globals.py'),
+                               tmp, '--check', '--json'],
+                              capture_output=True, text=True, encoding='utf-8')
+    r = scan_globals()
+    check('globals.py --check 對獨立測試專案是乾淨的', r.returncode, 0)
     data = json.loads(r.stdout)
     check_true('globals 掃到引擎保留名稱', data['engine'] > 40, data['engine'])
-    check('tiny-keep 沒有撞名', len(data['collisions']), 0)
+    check('測試專案沒有撞名', len(data['collisions']), 0)
+    with open(game_js, 'w', encoding='utf-8') as f:
+        f.write('const SHEETS = {};\n')
+    r = scan_globals()
+    check('故意撞名會回傳失敗', r.returncode, 1)
+    check_true('故意撞名能指出 SHEETS', 'SHEETS' in json.loads(r.stdout)['collisions'])
 
 # ---------------- 瀏覽器端 ----------------
 print('== demo/v16.html')
@@ -173,9 +185,10 @@ with sync_playwright() as p:
 
 print('--- console ---')
 print('\n'.join(logs[:20]) or '(none)')
-fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+fatal = logs
 if fatal:
     print('FAILED: 有 %d 個頁面錯誤' % len(fatal))
+    FAIL.append('頁面錯誤 / console.error / 資源載入失敗')
 if FAIL:
     print('FAILED: ' + ', '.join(FAIL))
     sys.exit(1)

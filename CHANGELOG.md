@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.8.1 — 2026-10-25
+
+### 可玩 Sprite 展示
+- 新增翠光秘庫 `demo/slot.html`：5×3／20 線遊戲幣 Slot、Wild／Scatter、免費旋轉、下注調整、自動與快速模式、音效及 FPS；分離規則層，保存 pending 避免重整後重扣或重複派彩。
+- `tests/slot.test.cjs` 驗證 13 項規則與 10,000 局金額守恆；`tools/slot.py` 驗證桌面／手機操作及存檔復原。
+- 新增光種森林 `demo/playground.html`：玩家移動、衝刺、揮劍、收集 8 顆光種，常駐顯示 FPS 與更新／繪製耗時，可切換 24／80／160 生物。
+- 套用 31 張既有 PNG：主角四方向 6 格待機／走路／攻擊、史萊姆逐格動畫，以及場景物件；素材出處獨立記錄於 `demo/assets/forest-sprites/CREDITS.md`。
+- `tools/playground.py` 驗證實際 PNG 載入、drawImage 換格、四方向動畫、桌面／觸控操作與目標可達性。
+
+### 輸入與時間步穩定性
+- `justPressed` 改由邏輯更新消耗：固定時間步零次更新不漏鍵，多次補跑不重複觸發。
+- 記錄實體鍵狀態，同動作的方向鍵／WASD 不再互相取消；鍵盤放開保留觸控按住的狀態。
+- 失焦清除待處理按鍵，避免返回頁面後誤觸。
+- `Loop.maxDelta = 0.25` 限制單次接納時間；變動時間步拆成最多 50ms 的小步，仍受 `maxSteps` 限制。
+- 背景 60ms timer 不再每次丟掉 10ms；忽略 timer／rAF 交接時較舊的時間戳。
+- 主 demo 補上 `TouchUI.draw()`，觸控搖桿可見。
+
+### 驗收與 CI
+- 新增 11 項 Node 回歸測試、桌面／手機瀏覽器操作測試與搖桿像素檢查。
+- CI 接齊 v1.4～v1.8 驗收；v1.6 測試改用自產素材與程式，不依賴 tiny-keep。
+- 修正 bench／soak／v16 遇到瀏覽器錯誤仍可能回傳成功的問題；各版本驗收將 console.error 視為失敗。
+- 新增真實瀏覽器錯誤注入測試，確認 bench／soak／v16 回傳失敗；修正 Windows 子程序 UTF-8 輸出。
+
 ## v1.8.0 — 2026-10-24
 
 ### 編輯器支援「物件」

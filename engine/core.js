@@ -241,6 +241,7 @@ const Loop = {
      >0  = 固定步長（例：1/60，物理決定性、可重播、連線更穩） */
   fixedStep: 0,
   maxSteps: 5,
+  maxDelta: 0.25,             // 單次最多補 250ms；長時間停頓不無限追趕
   /* 繪製節流：0 = 每帧都畫；>0 = 每秒最多畫幾次（省電，模擬照跑）
      例：陪伴類遊戲切到背景/專注模式時 `Loop.renderRate = 4`，
          摺疊起來時 `Loop.renderPaused = true`（模擬仍然推進）。 */
@@ -274,7 +275,9 @@ const Loop = {
   },
 
   tick(ts) {
-    const raw = Math.min(0.05, (ts - this._last) / 1000 || 0);
+    // timer 與 rAF 交接時，較舊的時間戳不應倒退時鐘。
+    if (ts < this._last) return;
+    const raw = Math.min(this.maxDelta, Math.max(0, (ts - this._last) / 1000 || 0));
     this._last = ts;
 
     const t0 = performance.now();
@@ -289,7 +292,15 @@ const Loop = {
       }
       if (steps >= this.maxSteps) this._fixedAcc = 0;   // 落後太多就丟掉，避免雪崩
     } else {
-      this.step(raw);
+      // 背景 timer 約 60ms 一次：保留經過時間，但每步不超過 50ms，避免穿牆。
+      let remaining = raw;
+      let steps = 0;
+      do {
+        const dt = Math.min(0.05, remaining);
+        this.step(dt);
+        remaining -= dt;
+        steps++;
+      } while (remaining > 1e-10 && steps < this.maxSteps);
     }
 
     /* 繪製（可節流 / 可暫停）；模擬與 Camera 不受影響 */
@@ -302,7 +313,6 @@ const Loop = {
       }
     }
     if (Camera) Camera.update(raw);
-    Input.endFrame();
 
     this._frames++;
     this._acc += raw;
@@ -324,6 +334,7 @@ const Loop = {
     if (typeof Net !== 'undefined' && Net.active) Net.update(d);
     Fx.update(d);
     if (this.update) this.update(d);
+    Input.endFrame();
   },
 
   toggleDebug() {

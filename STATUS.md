@@ -1,6 +1,23 @@
 # tiny-engine — 目前狀態（給下次接手的人 / 給 AI 讀）
 
-> 最後更新：2026-10-24　版本：**v1.8.0**　repo：https://github.com/iiiplay/tiny-engine （private）
+> 最後更新：2026-10-25　版本：**v1.8.1**（本機工作區；尚未提交／推送）　repo：https://github.com/iiiplay/tiny-engine （private）
+
+## v1.8.1 穩定性整理
+
+- 新增 `/demo/slot.html`（翠光秘庫）：5×3／20 線遊戲幣 Slot、7 張 PNG、Wild／Scatter、免費旋轉、下注、自動 10 局、音效與 FPS。純規則測試含 10,000 局金額守恆，瀏覽器驗收涵蓋重整恢復及防重複派彩。
+
+- 新增可玩展示 `/demo/playground.html`（光種森林）：玩家移動／衝刺／揮劍、8 顆光種、24／80／160 生物，以及即時 FPS 與耗時；`tools/playground.py` 驗證桌面與手機完整操作。
+- 展示已換用現有 PNG Sprite：主角四方向 6 格待機／走路／攻擊、史萊姆待機／移動、場景與拾取物；來源與使用範圍見 `demo/assets/forest-sprites/CREDITS.md`。
+
+- 修正固定時間步漏鍵／重複觸發、同方向多鍵互相取消、失焦殘留按鍵及鍵盤／觸控共用狀態。
+- 背景補跑保留 60ms 經過時間；變動時間步每步最多 50ms、每次最多 `maxSteps` 步，接納時間上限 `maxDelta=0.25` 秒。
+- 主 demo 補畫觸控搖桿；新增 `tools/runtime.py` 驗證桌面／手機操作及搖桿像素。
+- CI 接齊 v13～v16、11 項 Node 回歸與錯誤注入測試；v16 不再依賴相鄰 tiny-keep。
+- 相容性：API 沿用；`Input.justPressed()` 應在 update 讀取，現在於每次邏輯更新後消耗。
+- 長時間停頓仍刻意丟棄超額時間；不保證瀏覽器背景節流時完整追趕現實時間。
+
+本機驗證：主 demo、v13～v16、雙端連線、20 秒 soak 通過；四組 benchmark 為 60 FPS。
+桌面 1280×720／手機 375×667 以 Playwright Chromium 驗證，未實測手機硬體。
 
 ## 這是什麼
 
@@ -24,7 +41,7 @@ python tools/serve.py            # → http://localhost:8766/demo/   （手機�
 
 | 項目 | 狀態 | 驗證 |
 |---|---|---|
-| 引擎 13 模組（util/core/assets/sprite/input/audio/fx/physics/pathfind/save/ui/touch/net） | ✅ | `node --check` + demo 實跑 |
+| 引擎 18 模組（含 Scene／Grid／Level／Edit／TE） | ✅ | `node --check` + demo 實跑 |
 | 捲動鏡頭 `Camera`（跟隨／邊界／剔除／`cullEnabled`） | ✅ | demo 鏡頭 250→340；bench 同屏 14/200 |
 | 固定時間步 `Loop.fixedStep` | ✅ | demo 啟用中，60fps |
 | A\* `Pathfind`（8 方向、不切角、平滑） | ✅ | 路徑 `[6,1,1]`，F3 畫得出來 |

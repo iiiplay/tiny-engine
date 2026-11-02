@@ -18,7 +18,7 @@ with sync_playwright() as p:
     pg.on('requestfailed', lambda r: logs.append(f'[fail] {r.url}'))
 
     pg.goto(URL, wait_until='load')
-    pg.wait_for_function("typeof G !== 'undefined'", timeout=20000)
+    pg.wait_for_function("typeof Loop !== 'undefined' && Loop.renderCount > 0 && G.state !== 'loading'", timeout=20000)
     pg.wait_for_timeout(600)
     pg.screenshot(path=os.path.join(OUT, '1_title.png'))
 
@@ -42,7 +42,7 @@ with sync_playwright() as p:
     b.close()
 
 # 有任何 JS 錯誤 / 資源載入失敗就讓 CI 失敗
-fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+fatal = logs
 if fatal:
     print('FAILED: %d 個錯誤' % len(fatal))
     sys.exit(1)

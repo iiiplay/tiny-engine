@@ -140,6 +140,9 @@ if (Camera.visible(x, y, w, h)) { /* 只畫看得到的 */ }
 
 // 固定時間步（決定性 / 連線 / 重播）
 Loop.fixedStep = 1 / 60;
+Loop.maxDelta = 0.25; // 單次最多接納 250ms；固定時間步仍最多補 maxSteps 次
+// Input.justPressed 在邏輯更新後消耗，沒有更新時保留；補跑多步不重複觸發。
+// fixedStep=0 時以不超過 50ms 的小步補跑，最多 maxSteps 次。
 
 // A* 追擊
 c.repathT -= dt;

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101c1b">
+  <title>光種森林 · TinyEngine Playground</title>
+  <link rel="stylesheet" href="playground.css">
+</head>
+<body>
+  <header class="topbar" id="netUI">
+    <div class="identity"><span class="mark" aria-hidden="true">t<span>e</span></span><div><div class="eyebrow">TINY ENGINE <span>／ SPRITE DEMO</span></div><h1>光種森林<span class="edition">02</span></h1></div></div>
+    <div class="tools"><button id="population" title="切換生物數量，觀察 FPS">生物 <strong id="population-value">24</strong><span>＋</span></button><button id="pause" aria-label="暫停遊戲">暫停</button><button id="reset" aria-label="重新開始">重來 ↺</button></div>
+  </header>
+
+  <main id="stage" aria-label="遊戲區域">
+    <canvas id="game" tabindex="0" aria-label="光種森林。WASD 或方向鍵移動，Shift 衝刺，空白鍵攻擊。"></canvas>
+    <div class="mission"><div class="eyebrow">FOREST FIELD NOTES</div><h2 id="objective">找回散落的光種</h2><p>沿著微光探索，讓古老石環重新甦醒。</p><div class="seed-progress"><span id="seeds">00</span><span class="muted">/ 08</span><div id="seed-dots" aria-hidden="true"></div></div></div>
+    <aside class="performance" aria-label="即時效能"><div class="perf-top"><span class="live-dot"></span><span>LIVE PERFORMANCE</span></div><div class="fps-line"><strong id="fps">—</strong><span>FPS<small id="frame-ms">量測中</small></span></div><svg viewBox="0 0 168 34" preserveAspectRatio="none" aria-label="最近的 FPS 曲線"><path d="M0 27H168M0 7H168" stroke="#33483d" stroke-width=".6"/><polyline id="fps-chart" points="" fill="none" stroke="#b9e7a1" stroke-width="1.5"/></svg><div class="timing"><span>UPDATE <b id="update-ms">—</b></span><span>DRAW <b id="draw-ms">—</b></span></div><div class="perf-foot"><span id="entities">24 生物</span><span>固定 60Hz</span></div></aside>
+    <div class="player-hud"><span class="portrait" aria-hidden="true"><i></i></span><div><span class="player-name">林間旅人 <small>PLAYER 01</small></span><div id="hearts" aria-label="生命值"></div></div><div class="dash-meter"><span>衝刺</span><div><i id="dash-fill"></i></div></div></div>
+    <div class="coordinates"><span class="live-dot"></span> <span id="position">640 / 488</span> <span>・</span> <span id="hits">命中 0</span></div>
+    <div class="toast" id="toast" role="status">WASD 移動，空白鍵揮劍。出發吧。</div>
+    <div class="pause-overlay" id="pause-overlay" hidden><span class="eyebrow">TAKE A BREATH</span><h2>森林等你回來</h2><p>按 P 或點「繼續」返回遊戲</p></div>
+  </main>
+  <canvas id="ui" aria-hidden="true"></canvas>
+  <footer class="footer"><div class="controls"><span><kbd>W A S D</kbd><span class="or">/</span><kbd>↑ ↓ ← →</kbd> 移動</span><span><kbd>SHIFT</kbd> 衝刺</span><span><kbd>SPACE</kbd><span class="or">/</span><kbd>J</kbd> 攻擊</span><span><kbd>P</kbd> 暫停</span></div><div class="mobile-hint">左側搖桿移動 · 右側攻擊與衝刺</div><span class="signature">CANVAS 2D <i>✦</i> MADE WITH TINY ENGINE</span></footer>
+
+  <script src="../engine/dist/tiny-engine.js"></script>
+  <script src="playground-assets.js"></script>
+  <script src="playground.js"></script>
+</body>
+</html>

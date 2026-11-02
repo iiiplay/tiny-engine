@@ -151,7 +151,7 @@ with sync_playwright() as p:
 
 print('\n--- console ---')
 print('\n'.join(logs[:20]) or '(none)')
-fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+fatal = logs
 if fatal:
     fails.append('%d 個 JS 錯誤 / 資源載入失敗' % len(fatal))
 

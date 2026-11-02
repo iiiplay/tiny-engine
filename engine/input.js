@@ -7,6 +7,7 @@ const Input = {
   down: {},
   pressed: {},
   keyDown: {},   // 只有鍵盤按下的（觸控會參考它，避免互相覆蓋）
+  _codes: {},    // 實體鍵 → 動作；同一動作可能同時由方向鍵與 WASD 按住
   touchAxis: null,
 
   /* 預設只給最共通的動作；遊戲用 Input.init(自己的 map) 覆寫/擴充 */
@@ -26,6 +27,7 @@ const Input = {
       e.preventDefault();
       Sfx.unlock();
       if (!this.down[a]) this.pressed[a] = true;
+      this._codes[e.code] = a;
       this.keyDown[a] = true;
       this.down[a] = true;
     });
@@ -33,10 +35,14 @@ const Input = {
       const a = this.map[e.code];
       if (!a) return;
       e.preventDefault();
-      this.keyDown[a] = false;
-      this.down[a] = false;
+      delete this._codes[e.code];
+      this.keyDown[a] = Object.values(this._codes).includes(a);
+      const touchHeld = typeof TouchUI !== 'undefined' && TouchUI.enabled && TouchUI.held.has(a);
+      this.down[a] = this.keyDown[a] || !!touchHeld;
     });
-    addEventListener('blur', () => { this.down = {}; this.keyDown = {}; });
+    addEventListener('blur', () => {
+      this.down = {}; this.keyDown = {}; this._codes = {}; this.pressed = {};
+    });
   },
 
   /* 取得這一帧的移動向量（鍵盤 8 方向 / 搖桿連續方向），長度 <= 1 */
@@ -57,5 +63,6 @@ const Input = {
 
   isDown: (a) => !!Input.down[a],
   justPressed: (a) => !!Input.pressed[a],
+  // 由 Loop 在一次邏輯更新完成後消耗；沒有更新的繪製幀不能清掉按鍵。
   endFrame() { this.pressed = {}; },
 };

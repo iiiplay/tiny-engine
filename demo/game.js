@@ -188,6 +188,8 @@ function winGame() {
 
 /* ---------------- 繪製 ---------------- */
 function render() {
+  // 觸控層是獨立畫布，每次繪製也要更新（包含標題／結束時清掉搖桿）。
+  TouchUI.draw();
   const ctx = G.ctx;
   const SC = G.scale;
   Camera.apply(ctx, SC);                 // ★ 鏡頭（沒啟用時等於 (0,0)）

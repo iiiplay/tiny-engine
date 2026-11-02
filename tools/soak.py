@@ -16,8 +16,9 @@ with sync_playwright() as p:
     errs = []
     pg.on('pageerror', lambda e: errs.append(f'[pageerror] {e}'))
     pg.on('console', lambda m: errs.append(f'[{m.type}] {m.text}') if m.type == 'error' else None)
+    pg.on('requestfailed', lambda r: errs.append(f'[fail] {r.url}'))
     pg.goto(URL, wait_until='load')
-    pg.wait_for_function("typeof G !== 'undefined'", timeout=20000)
+    pg.wait_for_function("typeof Loop !== 'undefined' && Loop.renderCount > 0 && G.state !== 'loading'", timeout=20000)
     pg.keyboard.press('Enter')
     t0 = time.time()
     while time.time() - t0 < SECS:
@@ -30,3 +31,6 @@ with sync_playwright() as p:
     print('state :', pg.evaluate("typeof G !== 'undefined' ? G.state : '?'"))
     print('errors:', errs[:10] or '(none)')
     b.close()
+
+print('FAIL' if errs else 'PASS')
+sys.exit(1 if errs else 0)

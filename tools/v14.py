@@ -42,7 +42,7 @@ with sync_playwright() as p:
     print('fps:', fps)
     b.close()
 
-fatal = [l for l in logs if l.startswith('[pageerror]') or l.startswith('[fail]')]
+fatal = logs
 print('--- console ---')
 print('\n'.join(logs[:20]) or '(none)')
 

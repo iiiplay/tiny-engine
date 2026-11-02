@@ -22,6 +22,8 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={'width': 1200, 'height': 720})
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.on('console', lambda m: errs.append(m.text) if m.type == 'error' else None)
+    pg.on('requestfailed', lambda r: errs.append('request failed: ' + r.url))
     for name, qs in CASES:
         pg.goto(BASE + qs, wait_until='load')
         pg.wait_for_function("window.__bench", timeout=30000)
@@ -33,7 +35,9 @@ with sync_playwright() as p:
             ok = False
         print('%s %s' % (flag, line))
     print('errors:', errs[:5] or '(none)')
+    if errs:
+        ok = False
     b.close()
 
-print('結果:', 'PASS' if ok else 'FAIL（有案例 fps < %d）' % MIN_FPS)
+print('結果:', 'PASS' if ok else 'FAIL（fps < %d 或瀏覽器錯誤）' % MIN_FPS)
 sys.exit(0 if ok else 1)

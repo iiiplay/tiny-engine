@@ -8,7 +8,7 @@
    engine/util.js — 世界尺寸、小工具、方向表
    ============================================================ */
 
-const TINY_ENGINE_VERSION = '1.8.0';
+const TINY_ENGINE_VERSION = '1.8.1';
 
 let GAME_W = 480;     // 邏輯寬度（遊戲可在自己的腳本裡覆寫）
 let GAME_H = 240;     // 邏輯高度「依螢幕比例自動生成」→ 滿版且不裁切
@@ -275,6 +275,7 @@ const Loop = {
      >0  = 固定步長（例：1/60，物理決定性、可重播、連線更穩） */
   fixedStep: 0,
   maxSteps: 5,
+  maxDelta: 0.25,             // 單次最多補 250ms；長時間停頓不無限追趕
   /* 繪製節流：0 = 每帧都畫；>0 = 每秒最多畫幾次（省電，模擬照跑）
      例：陪伴類遊戲切到背景/專注模式時 `Loop.renderRate = 4`，
          摺疊起來時 `Loop.renderPaused = true`（模擬仍然推進）。 */
@@ -308,7 +309,9 @@ const Loop = {
   },
 
   tick(ts) {
-    const raw = Math.min(0.05, (ts - this._last) / 1000 || 0);
+    // timer 與 rAF 交接時，較舊的時間戳不應倒退時鐘。
+    if (ts < this._last) return;
+    const raw = Math.min(this.maxDelta, Math.max(0, (ts - this._last) / 1000 || 0));
     this._last = ts;
 
     const t0 = performance.now();
@@ -323,7 +326,15 @@ const Loop = {
       }
       if (steps >= this.maxSteps) this._fixedAcc = 0;   // 落後太多就丟掉，避免雪崩
     } else {
-      this.step(raw);
+      // 背景 timer 約 60ms 一次：保留經過時間，但每步不超過 50ms，避免穿牆。
+      let remaining = raw;
+      let steps = 0;
+      do {
+        const dt = Math.min(0.05, remaining);
+        this.step(dt);
+        remaining -= dt;
+        steps++;
+      } while (remaining > 1e-10 && steps < this.maxSteps);
     }
 
     /* 繪製（可節流 / 可暫停）；模擬與 Camera 不受影響 */
@@ -336,7 +347,6 @@ const Loop = {
       }
     }
     if (Camera) Camera.update(raw);
-    Input.endFrame();
 
     this._frames++;
     this._acc += raw;
@@ -358,6 +368,7 @@ const Loop = {
     if (typeof Net !== 'undefined' && Net.active) Net.update(d);
     Fx.update(d);
     if (this.update) this.update(d);
+    Input.endFrame();
   },
 
   toggleDebug() {
@@ -700,6 +711,7 @@ const Input = {
   down: {},
   pressed: {},
   keyDown: {},   // 只有鍵盤按下的（觸控會參考它，避免互相覆蓋）
+  _codes: {},    // 實體鍵 → 動作；同一動作可能同時由方向鍵與 WASD 按住
   touchAxis: null,
 
   /* 預設只給最共通的動作；遊戲用 Input.init(自己的 map) 覆寫/擴充 */
@@ -719,6 +731,7 @@ const Input = {
       e.preventDefault();
       Sfx.unlock();
       if (!this.down[a]) this.pressed[a] = true;
+      this._codes[e.code] = a;
       this.keyDown[a] = true;
       this.down[a] = true;
     });
@@ -726,10 +739,14 @@ const Input = {
       const a = this.map[e.code];
       if (!a) return;
       e.preventDefault();
-      this.keyDown[a] = false;
-      this.down[a] = false;
+      delete this._codes[e.code];
+      this.keyDown[a] = Object.values(this._codes).includes(a);
+      const touchHeld = typeof TouchUI !== 'undefined' && TouchUI.enabled && TouchUI.held.has(a);
+      this.down[a] = this.keyDown[a] || !!touchHeld;
     });
-    addEventListener('blur', () => { this.down = {}; this.keyDown = {}; });
+    addEventListener('blur', () => {
+      this.down = {}; this.keyDown = {}; this._codes = {}; this.pressed = {};
+    });
   },
 
   /* 取得這一帧的移動向量（鍵盤 8 方向 / 搖桿連續方向），長度 <= 1 */
@@ -750,6 +767,7 @@ const Input = {
 
   isDown: (a) => !!Input.down[a],
   justPressed: (a) => !!Input.pressed[a],
+  // 由 Loop 在一次邏輯更新完成後消耗；沒有更新的繪製幀不能清掉按鍵。
   endFrame() { this.pressed = {}; },
 };
 
