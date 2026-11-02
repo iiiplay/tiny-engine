@@ -49,46 +49,80 @@ def ws_frame(payload, opcode=0x1):
 
 
 class Rooms:
-    """room -> {'host': conn, 'peer': conn}"""
+    """Relay assigns player seats; peer-supplied ids are never trusted."""
     _lock = threading.Lock()
     _rooms = {}
 
     @classmethod
-    def join(cls, room, role, conn):
+    def join(cls, room, role, conn, cid=''):
         with cls._lock:
-            r = cls._rooms.setdefault(room, {})
-            r[role] = conn
-            other = r.get('peer' if role == 'host' else 'host')
-            alive = bool(other and other.alive)
-        if alive:
-            cls._send(other, json.dumps({'t': 'sys', 'msg': 'peer-joined'}))
-            cls._send(conn, json.dumps({'t': 'sys', 'msg': 'room-ready'}))
-        return alive
+            r = cls._rooms.setdefault(room, {'host': None, 'peers': {}, 'cids': {}})
+            peers = r['peers']
+            if role == 'host':
+                if r['host'] and r['host'].alive:
+                    cls._send(conn, json.dumps({'t':'sys','msg':'room-full'})); return False
+                r['host'] = conn; conn.peer_id = 0
+                slots = sorted(peers)
+                for slot, peer in peers.items():
+                    cls._send(conn, json.dumps({'t':'sys','msg':'peer-joined','peerId':slot,'peers':slots}))
+                    cls._send(peer, json.dumps({'t':'sys','msg':'room-ready','peerId':slot,'peers':slots}))
+            else:
+                old = r['cids'].get(cid) if cid else None
+                if old in peers:
+                    cls._send(conn, json.dumps({'t':'sys','msg':'room-full'})); return False
+                slot = old if old and old not in peers else next((i for i in range(1,4) if i not in peers), None)
+                if slot is None:
+                    cls._send(conn, json.dumps({'t':'sys','msg':'room-full'})); return False
+                reconnected = old == slot
+                # A seat reassigned to another client invalidates its old token.
+                r['cids'] = {k:v for k,v in r['cids'].items() if v != slot}
+                if cid: r['cids'][cid] = slot
+                conn.peer_id = slot; peers[slot] = conn; slots = sorted(peers)
+                cls._send(conn, json.dumps({'t':'sys','msg':'assigned','peerId':slot,'reconnected':reconnected,'peers':slots}))
+                if r['host'] and r['host'].alive:
+                    cls._send(r['host'], json.dumps({'t':'sys','msg':'peer-joined','peerId':slot,'reconnected':reconnected,'peers':slots}))
+                    cls._send(conn, json.dumps({'t':'sys','msg':'room-ready','peerId':slot,'peers':slots}))
+        return True
 
     @classmethod
     def leave(cls, room, role, conn):
         with cls._lock:
-            r = cls._rooms.get(room) or {}
-            if r.get(role) is conn:
-                r.pop(role, None)
-            other = r.get('peer' if role == 'host' else 'host')
-            if not r:
-                cls._rooms.pop(room, None)
-        if other and other.alive:
-            cls._send(other, json.dumps({'t': 'sys', 'msg': 'peer-left'}))
+            r = cls._rooms.get(room)
+            if not r: return
+            if role == 'host':
+                if r['host'] is not conn: return
+                r['host'] = None; targets = list(r['peers'].values()); slot = 0
+            else:
+                slot = getattr(conn, 'peer_id', None)
+                if r['peers'].get(slot) is not conn: return
+                del r['peers'][slot]; targets = [r['host']] if r['host'] else []
+            slots = sorted(r['peers'])
+            if not r['host'] and not r['peers']: cls._rooms.pop(room, None)
+            for target in targets:
+                if target and target.alive: cls._send(target, json.dumps({'t':'sys','msg':'peer-left','peerId':slot,'role':role,'peers':slots}))
 
     @classmethod
-    def relay(cls, room, role, data):
+    def relay(cls, room, role, data, conn=None):
         with cls._lock:
-            r = cls._rooms.get(room) or {}
-            other = r.get('peer' if role == 'host' else 'host')
-        if other and other.alive:
-            try:
-                other.send(data)
-                return True
-            except Exception:
-                return False
-        return False
+            r = cls._rooms.get(room)
+            if not r: return False
+            if role == 'host':
+                if r['host'] is not conn: return False
+                targets = list(r['peers'].values())
+            else:
+                slot = getattr(conn, 'peer_id', None)
+                if r['peers'].get(slot) is not conn: return False
+                try:
+                    msg = json.loads(data)
+                    if isinstance(msg, dict):
+                        if msg.get('t') == 'sys': return False
+                        msg['id'] = slot
+                        data = json.dumps(msg)
+                except (ValueError, TypeError, UnicodeDecodeError): pass
+                targets = [r['host']] if r['host'] else []
+            for target in targets:
+                if target and target.alive: cls._send(target, data)
+            return bool(targets)
 
     @classmethod
     def _send(cls, conn, text):
@@ -139,6 +173,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         room = (q.get('room', ['lobby'])[0] or 'lobby')[:16]
         role = q.get('role', ['peer'])[0]
+        cid = (q.get('cid', [''])[0] or '')[:64]
         if role not in ('host', 'peer'):
             role = 'peer'
 
@@ -147,9 +182,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.connection.settimeout(None)
         except Exception:
             pass
-        ready = Rooms.join(room, role, self)
+        ready = Rooms.join(room, role, self, cid)
         sys.stderr.write('  [ws] room=%s role=%s %s\n' % (room, role, 'READY' if ready else 'waiting'))
         try:
+            if not ready: return
             while self.alive:
                 frame = self.read_frame()
                 if frame is None:
@@ -163,7 +199,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if opcode == 0xA:
                     continue
                 if opcode in (0x1, 0x2):
-                    Rooms.relay(room, role, data)
+                    Rooms.relay(room, role, data, self)
         except Exception:
             pass
         finally:
