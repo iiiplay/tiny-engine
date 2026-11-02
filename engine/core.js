@@ -21,6 +21,7 @@ const Display = {
   /* 依螢幕比例決定場地高度（不裁切），並把畫布鋪滿螢幕 */
   layout() {
     if (!G.canvas) return;
+    if (this._fitOpt) { this.fit(G.canvas, this._fitOpt); return; }
     const W = innerWidth, H = innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
 
@@ -69,6 +70,7 @@ const Display = {
      回傳實際使用的 cssScale。 */
   fit(canvas, opt) {
     opt = opt || {};
+    this._fitOpt = { ...opt };
     const w = opt.w || GAME_W;
     const h = opt.h || GAME_H;
     GAME_W = w;
@@ -89,12 +91,13 @@ const Display = {
     canvas.height = Math.round(h * G.scale);
     G.canvas = canvas;
     G.ctx = canvas.getContext('2d');
-    G.ctx.imageSmoothingEnabled = false;
+    G.ctx.imageSmoothingEnabled = !!opt.smooth;
     G.ctx.textRendering = 'geometricPrecision';
     return s;
   },
 
   init(canvas) {
+    this._fitOpt = null;
     G.canvas = canvas;
     G.ctx = canvas.getContext('2d');
     G.ctx.imageSmoothingEnabled = false;

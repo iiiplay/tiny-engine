@@ -124,11 +124,14 @@ function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt) {
   const h = dh == null ? sh : dh;
   const fx = !!o.flipX, fy = !!o.flipY, rot = o.rot || 0;
   const a = o.alpha;
+  const oldSmooth = ctx.imageSmoothingEnabled;
+  if (o.smooth != null) ctx.imageSmoothingEnabled = !!o.smooth;
   if (a != null) ctx.globalAlpha = a;
 
   // 最常見的情況：什麼都不變 → 直接畫
   if (!fx && !fy && !rot) {
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, w, h);
+    if (o.smooth != null) ctx.imageSmoothingEnabled = oldSmooth;
     if (a != null) ctx.globalAlpha = 1;
     return;
   }
@@ -142,6 +145,7 @@ function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh, opt) {
   if (fx || fy) ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
   ctx.drawImage(img, sx, sy, sw, sh, dx - pv.x, dy - pv.y, w, h);
   ctx.restore();
+  if (o.smooth != null) ctx.imageSmoothingEnabled = oldSmooth;
   if (a != null) ctx.globalAlpha = 1;
 }
 
@@ -161,7 +165,7 @@ function drawSheet(s, frame, x, y, o, target) {
   drawSprite(img, (frame | 0) * fw, 0, fw, fh,
     px, py, Math.ceil(fw * sc), Math.ceil(fh * sc), {
       flipX: o.flipX, flipY: o.flipY, rot: o.rot,
-      pivot: o.pivot,
+      pivot: o.pivot, smooth: o.smooth,
       alpha: o.alpha, target: ctx,
     });
 }
