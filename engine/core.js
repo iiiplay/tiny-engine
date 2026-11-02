@@ -335,6 +335,7 @@ const Loop = {
     /* 引擎子系統：觸控狀態合併、區網收送 */
     if (typeof TouchUI !== 'undefined' && TouchUI.enabled) TouchUI.update();
     if (typeof Net !== 'undefined' && Net.active) Net.update(d);
+    if (typeof Sfx !== 'undefined' && Sfx.update) Sfx.update(d);
     Fx.update(d);
     if (this.update) this.update(d);
     Input.endFrame();
