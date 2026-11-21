@@ -18,15 +18,15 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 5 軸 × 3 列、20 線，使用 PNG 素材；支援 Wild／Scatter、免費旋轉、下注調整、自動 10 局、快速模式、音效及 FPS。
 初始贈送 2,000 遊戲幣；按空白鍵旋轉、A 開關自動旋轉、M 靜音。玩法按鈕內含賠付表、權重與全部連線。
 核心規則與存檔復原放在 `demo/slot-rules.js`，不依賴畫面；驗收：`node --test tests/slot.test.cjs`、`python tools/slot.py <url>`。
-素材來源見 [`demo/assets/slot/CREDITS.md`](demo/assets/slot/CREDITS.md)。
+素材為本專案原創（程式繪製），來源見 [`demo/assets/slot/CREDITS.md`](demo/assets/slot/CREDITS.md)。
 
 **新增可玩展示：[光種森林](demo/playground.html)** — 啟動伺服器後開啟
 `http://localhost:8766/demo/playground.html`。WASD／方向鍵移動、Shift 衝刺、Space／J 攻擊；
 手機提供搖桿與雙按鈕。常駐顯示實際 FPS、幀時間曲線、更新／繪製耗時，右上可切換 24／80／160 隻生物。
 目標是收集 8 顆光種；`P` 暫停、`R` 重來。驗收：`python tools/playground.py <url>`。
 
-Sprite 版使用 31 張現有 PNG：主角四方向待機／走路／揮劍、史萊姆逐格動畫、樹木與拾取物等。
-第三方素材來源與使用範圍見 [`demo/assets/forest-sprites/CREDITS.md`](demo/assets/forest-sprites/CREDITS.md)，不屬於引擎 MIT 授權。
+Sprite 版使用 31 張本專案原創 PNG（程式逐像素繪製）：主角四方向待機／走路／揮劍、史萊姆逐格動畫、樹木與拾取物等。
+來源與授權見 [`demo/assets/forest-sprites/CREDITS.md`](demo/assets/forest-sprites/CREDITS.md)；素材授權與引擎的 MIT 授權分開。
 
 `demo/` 是一個 300 行的完整小遊戲，示範引擎的每一項核心能力：
 
@@ -34,7 +34,7 @@ Sprite 版使用 31 張現有 PNG：主角四方向待機／走路／揮劍、�
 - **A\* 尋路**：3 隻追擊者繞過障礙物追你（`F3` 會畫出路徑）
 - **固定時間步**：`Loop.fixedStep = 1/60`（物理決定性）
 - **排行榜**：過關時間自動存 localStorage，破紀錄會顯示「新紀錄」
-- **精靈動畫**：6 格走近動畫（素材是 `demo/tools/make_art.py` 程式產生的，沒有授權問題）
+- **精靈動畫**：6 格走近動畫（`demo/assets/hero.png` 是本專案原創，由 `demo/tools/art-src/hero-r2-source.py` 繪製；`demo/tools/make_art.py` 可另外產生一張簡易替代圖）
 - **v1.3 驗收頁**：`demo/v13.html`（Scene / UI 按鈕 / 離線收益 / 四方向 / 繪製節流）
 - **v1.4 驗收頁**：`demo/v14.html`（`drawSprite` 的翻轉 ⇄ / 顛倒 ⇅ / 旋轉 ⟳ + 軸心 pivot）
 - **v1.5 驗收頁**：`demo/v15.html`（格子碰撞 / BFS 距離場 / 逐格動畫 / Camera.push）

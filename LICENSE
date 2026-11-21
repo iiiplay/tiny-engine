@@ -23,5 +23,6 @@ SOFTWARE.
 ---
 
 註：本授權只涵蓋 engine/ 與 tools/ 的程式碼。
-demo/assets/hero.png 由 demo/tools/make_art.py 產生（本專案原創）。
+demo/assets/ 下的 PNG 都是本專案原創（產生腳本在 demo/tools/art-src/ 與 demo/tools/make_art.py），
+不在本 MIT 授權範圍內，素材授權另行決定；demo/assets 的音訊由 demo/tools/make_audio.py 產生。
 若你把第三方素材包放進自己的專案，請自行確認該素材的授權。

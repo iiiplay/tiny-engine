@@ -1,16 +1,10 @@
 # 翠光秘庫 Slot 素材
 
-7 張 PNG 從使用者既有的 `D:/Project/tiny-arena/assets/pack/` 複製，沒有修改像素。
-素材包為 Tiny Adventure Pack Plus，沿用原專案的 private 使用範圍。
+本資料夾 7 張 PNG（coin、jade、ruby、heart、chest、wild、scatter）全部是本專案團隊原創，2026-11-21 以 Python／Pillow 程式逐像素繪製，產生腳本是 `demo/tools/art-src/props-slot-r2-source.py`。沒有使用第三方素材包。
 
-| 本地名稱 | 原始路徑 |
-|---|---|
-| coin.png | Other/Items/Misc/Coin.png |
-| jade.png | Other/Items/Misc/Green_orb.png |
-| ruby.png | Other/Items/Misc/Red_orb.png |
-| heart.png | Other/Items/Misc/Heart.png |
-| chest.png | Other/Misc/Chest.png（6 格；展示第 1 格） |
-| wild.png | Other/Items/Weapon/Sword.png |
-| scatter.png | Other/Items/Misc/Key.png |
+- `chest.png` 是橫向 6 格的 sheet（每格 fw=16）。
+- `jade.png` 與 `forest-sprites/seed.png` 是同一張圖。
 
-第三方 PNG 不屬於引擎程式碼的 MIT 授權。原專案未確認可再散布，公開發布前須另行確認原素材授權。
+## 授權
+
+著作權屬本 repo 擁有者（iiiplay）。素材授權與程式碼授權分開處理：根目錄 `LICENSE`（MIT）只涵蓋 `engine/` 與 `tools/` 的程式碼。素材要採用哪種授權，還待擁有者決定。
