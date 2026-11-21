@@ -26,7 +26,7 @@ python tools/serve.py        # 本機 + 手機（同一個 Wi-Fi）都能玩
 目標是收集 8 顆光種；`P` 暫停、`R` 重來。驗收：`python tools/playground.py <url>`。
 
 Sprite 版使用 31 張本專案原創 PNG（程式逐像素繪製）：主角四方向待機／走路／揮劍、史萊姆逐格動畫、樹木與拾取物等。
-來源與授權見 [`demo/assets/forest-sprites/CREDITS.md`](demo/assets/forest-sprites/CREDITS.md)；素材授權與引擎的 MIT 授權分開。
+來源與授權見 [`demo/assets/forest-sprites/CREDITS.md`](demo/assets/forest-sprites/CREDITS.md)；素材為團隊原創，與程式碼同樣以 MIT 授權釋出。
 
 `demo/` 是一個 300 行的完整小遊戲，示範引擎的每一項核心能力：
 
