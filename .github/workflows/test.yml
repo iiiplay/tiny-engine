@@ -43,7 +43,7 @@ jobs:
       - name: 安裝 Playwright
         run: |
           python -m pip install --upgrade pip
-          pip install playwright
+          pip install playwright pillow
           python -m playwright install --with-deps chromium
 
       - name: 單檔打包同步檢查
