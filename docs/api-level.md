@@ -249,7 +249,7 @@ const MANIFEST = {}; for (const k in SRC) MANIFEST[SRC[k]] = { src: SRC[k] };
 ## `tools/globals.py`：撞名檢查（CI 用）
 
 ```bash
-python tools/globals.py D:/Project/tiny-keep            # 只報告
+python tools/globals.py ../tiny-keep            # 只報告
 python tools/globals.py D:/Project/tiny-keep --check    # 撞名就 exit 1
 ```
 

@@ -9,7 +9,7 @@ v1.9 功能、使用方式與相容性見 `CHANGELOG.md` 及 `docs/v19-compatibi
 - 新增 `/demo/slot.html`（翠光秘庫）：5×3／20 線遊戲幣 Slot、7 張 PNG、Wild／Scatter、免費旋轉、下注、自動 10 局、音效與 FPS。純規則測試含 10,000 局金額守恆，瀏覽器驗收涵蓋重整恢復及防重複派彩。
 
 - 新增可玩展示 `/demo/playground.html`（光種森林）：玩家移動／衝刺／揮劍、8 顆光種、24／80／160 生物，以及即時 FPS 與耗時；`tools/playground.py` 驗證桌面與手機完整操作。
-- 展示已換用現有 PNG Sprite：主角四方向 6 格待機／走路／攻擊、史萊姆待機／移動、場景與拾取物；來源與使用範圍見 `demo/assets/forest-sprites/CREDITS.md`。
+- 展示已換用團隊自製的原創 PNG Sprite（MIT）：主角四方向 6 格待機／走路／攻擊、史萊姆待機／移動、場景與拾取物；來源與使用範圍見 `demo/assets/forest-sprites/CREDITS.md`。
 
 - 修正固定時間步漏鍵／重複觸發、同方向多鍵互相取消、失焦殘留按鍵及鍵盤／觸控共用狀態。
 - 背景補跑保留 60ms 經過時間；變動時間步每步最多 50ms、每次最多 `maxSteps` 步，接納時間上限 `maxDelta=0.25` 秒。
@@ -29,7 +29,7 @@ v1.9 功能、使用方式與相容性見 `CHANGELOG.md` 及 `docs/v19-compatibi
 ## 30 秒跑起來
 
 ```bash
-cd D:/Project/tiny-engine
+cd tiny-engine   # repo 根目錄
 python tools/serve.py            # → http://localhost:8766/demo/   （手機同一個 Wi-Fi 也能開）
 ```
 

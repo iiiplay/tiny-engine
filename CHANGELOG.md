@@ -2,7 +2,7 @@
 
 ## v1.9.0 — 2026-11-02
 
-以 v1.8.1 為基礎，參考 `D:/gemini/tiny-engine` v1.9 逐項選擇與改寫；未採用該版 iso、展示素材或打包產物。
+以 v1.8.1 為基礎，參考 另一份本機分支 v1.9 逐項選擇與改寫；未採用該版 iso、展示素材或打包產物。
 
 - Grid 新增加權路徑、轉向成本、距離場與可通行成本；Pathfind 以獨立狀態的最小堆尋路。Fx 回收使用 swap-and-pop。
 - Edit 完整復原格子／標記／物件、繪製標記與物件、限制指標攔截範圍；Level 支援成本與分享碼。
@@ -27,7 +27,7 @@
 - 新增翠光秘庫 `demo/slot.html`：5×3／20 線遊戲幣 Slot、Wild／Scatter、免費旋轉、下注調整、自動與快速模式、音效及 FPS；分離規則層，保存 pending 避免重整後重扣或重複派彩。
 - `tests/slot.test.cjs` 驗證 13 項規則與 10,000 局金額守恆；`tools/slot.py` 驗證桌面／手機操作及存檔復原。
 - 新增光種森林 `demo/playground.html`：玩家移動、衝刺、揮劍、收集 8 顆光種，常駐顯示 FPS 與更新／繪製耗時，可切換 24／80／160 生物。
-- 套用 31 張既有 PNG：主角四方向 6 格待機／走路／攻擊、史萊姆逐格動畫，以及場景物件；素材出處獨立記錄於 `demo/assets/forest-sprites/CREDITS.md`。
+- 套用 31 張團隊自製的原創 PNG（MIT）：主角四方向 6 格待機／走路／攻擊、史萊姆逐格動畫，以及場景物件；素材出處獨立記錄於 `demo/assets/forest-sprites/CREDITS.md`。
 - `tools/playground.py` 驗證實際 PNG 載入、drawImage 換格、四方向動畫、桌面／觸控操作與目標可達性。
 
 ### 輸入與時間步穩定性
